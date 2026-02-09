@@ -12,11 +12,11 @@ print(f"Using device: {device}")
 torch.autograd.set_detect_anomaly(True)
 
 if __name__ == "__main__":
-    trained_model, raytracer, losses= train_surface(
-        epochs=2e3,
+    trained_model, raytracer, losses = train_surface(
+        epochs=2e2,
         lr=1e-4,
         device=device,
-        gif=100
+        gif=50
     )
 
     # Plot losses

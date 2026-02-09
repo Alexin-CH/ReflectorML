@@ -10,7 +10,7 @@ from geomloss import SamplesLoss
 from tqdm import tqdm
 
 from sources import coords_to_density, density_to_random_coords, \
-    gray_image_to_density, sample_beam
+    gray_image_to_density, sample_beam, density_square
 from validation import validate_surface
 from network import MirrorSurface
 from raytracer import MirrorRayTracer
@@ -29,10 +29,10 @@ def train_surface(epochs, lr, device, gif=0):
     mirror_model = MirrorSurface().to(device)
     raytracer = MirrorRayTracer(target_x=5).to(device)
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         params=mirror_model.parameters(),
         lr=lr,
-        weight_decay=1e-5
+        weight_decay=1e-4
     )
 
     # Trying different scheduler
@@ -52,7 +52,7 @@ def train_surface(epochs, lr, device, gif=0):
 
     # Loss Function (Optimal Transport)
     # "sinkhorn" is an approximate Wasserstein distance, fully differentiable
-    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=2, blur=0.05)
+    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=1, blur=1e-8)
     
     # Optimization Loop
     print()
@@ -70,13 +70,15 @@ def train_surface(epochs, lr, device, gif=0):
         source_coords = sample_beam(batch_size).to(device)
         source_density = coords_to_density(source_coords)
 
-        img = np.array(Image.open("src/tux.png")).mean(axis=2)
-        img = torch.tensor(img)
+        # Open image
+        # img = np.array(Image.open("src/tux.png")).mean(axis=2)
+        # img = torch.tensor(img)
         
         # Convert image to density map
-        # target_density = density_square().to(device)
+        # target_density = gray_image_to_density(img).to(device)
+        
+        target_density = density_square().to(device)
 
-        target_density = gray_image_to_density(img).to(device)
 
         target_coords = density_to_random_coords(target_density, radius=1, num_points=batch_size).to(device)
         target_density = coords_to_density(target_coords)
@@ -97,8 +99,6 @@ def train_surface(epochs, lr, device, gif=0):
         # Transport Loss (Sinkhorn) - Gives global structure
         transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 
-        distance_loss = criterion(predicted_coords, target_coords)
-
         # Monge-Ampère Loss (PDE) - Enforces local smoothness and density
         # Also enforces strict convexity
         ma_loss, cv_loss = compute_ma_losses(
@@ -116,7 +116,7 @@ def train_surface(epochs, lr, device, gif=0):
             optimizer.zero_grad()
             
             pi_loss = alpha * cv_loss + (1 - alpha) * ma_loss
-            total_loss = beta * transport_loss + (1 - beta) * pi_loss + distance_loss * 0.1
+            total_loss = beta * transport_loss + (1 - beta) * pi_loss
             loss = criterion(total_loss * 1e3, zero)
             
             loss.backward()

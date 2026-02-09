@@ -52,7 +52,7 @@ def plot_results(source_coords, source_density, predicted_coords, predicted_dens
     predicted_density = predicted_density.detach().cpu()
 
     # Create figure
-    plt.figure(figsize=(16, 8), dpi=100)
+    plt.figure(figsize=(10, 6), dpi=100)
     plt.suptitle("Coordinate and Density Distribution Comparison" + 
                  f" - Training Step {step}", 
                  fontsize=16, fontweight='bold')
@@ -66,7 +66,6 @@ def plot_results(source_coords, source_density, predicted_coords, predicted_dens
     plt.xlabel('X Coordinate')
     plt.ylabel('Y Coordinate')
     plt.grid(True, linestyle='--', alpha=0.5)
-    plt.legend()
     plt.axis('equal')
 
     # Predicted Coordinate Scatter Plot
@@ -78,7 +77,6 @@ def plot_results(source_coords, source_density, predicted_coords, predicted_dens
     plt.xlabel('X Coordinate')
     plt.ylabel('Y Coordinate')
     plt.grid(True, linestyle='--', alpha=0.5)
-    plt.legend()
     plt.axis('equal')
 
     # Source Density Heatmap

@@ -42,4 +42,8 @@ This repository includes many projects and scripts. Main scripts are located in 
 
 - - -
 
-![to_square](images/to_square_MA.gif)
+![square](images/square.gif)
+
+## Thanks
+
+Special thanks to **[Valentin MALQUY](https://github.com/Valentin-Malquy)** for their preliminary work on this topic. Your contributions and insights have been invaluable in shaping this project.
