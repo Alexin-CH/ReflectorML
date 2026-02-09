@@ -10,6 +10,34 @@ By embedding the governing equations—such as the Monge–Ampère equation—di
 Unlike purely data-driven models, PINNs do not rely solely on labeled data but instead enforce optical constraints during training, improving solution accuracy for specific problem instances.
 This framework accelerates the inverse design process and provides a computationally efficient alternative to traditional numerical solvers.
 
+## Getting Started
+
+### Prerequisites
+
+Ensure you have the following installed:
+
+- Python 3.7 or higher
+- Required libraries (listed in `requirements.txt`)
+
+### Installation
+
+Clone the repository:
+
+```bash
+git clone  https://github.com/Alexin-CH/ReflectorML.git
+cd ReflectorML
+```
+
+Install the required dependencies:
+``` bash
+make
+```
+
+## Usage
+
+This repository includes many projects and scripts. Main scripts are located in the `src` directory.
+
+
 - - -
 
 ![to_square](images/to_square_MA.gif)
