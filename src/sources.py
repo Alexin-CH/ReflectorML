@@ -27,15 +27,18 @@ def coords_to_density_indices(coords, nbins=200):
     
     return y_indices[valid_mask], z_indices[valid_mask]
 
-def coords_to_density(coords, nbins=200):
+def coords_to_density(coords, nbins=200, flip=True):
     y_indices, z_indices = coords_to_density_indices(coords, nbins)
     H = torch.zeros(nbins, nbins, dtype=torch.long, device=coords.device)
 
     for y, z in zip(y_indices, z_indices):
         H[z, y] += 1
     
-    return torch.flip(H, dims=[0])
-
+    if flip:
+        return torch.flip(H, dims=[0])
+    else:
+        return H
+        
 def density_to_random_coords(density_map, radius, num_points=1000):
     # Normalize density
     density_normalized = density_map / density_map.sum()

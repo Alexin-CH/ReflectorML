@@ -28,11 +28,11 @@ class MirrorSurface(nn.Module):
         # Output: y height deviation from the base 45-degree plane
         
         self.net = nn.Sequential(
-            SineLayer(2, 64, omega_0=30),
-            SineLayer(64, 64, omega_0=20),
-            SineLayer(64, 64, omega_0=10),
-            SineLayer(64, 64, omega_0=10),
-            nn.Linear(64, 1)
+            SineLayer(2, 256, omega_0=30),
+            SineLayer(256, 256, omega_0=20),
+            SineLayer(256, 256, omega_0=10),
+            SineLayer(256, 256, omega_0=10),
+            nn.Linear(256, 1)
         )
         
         # Initialize final layer to be very close to 0
