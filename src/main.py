@@ -16,7 +16,7 @@ if __name__ == "__main__":
         epochs=2e2,
         lr=1e-4,
         device=device,
-        gif=50
+        gif=20
     )
 
     # Plot losses

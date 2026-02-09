@@ -54,9 +54,9 @@ def train_surface(epochs, lr, device, gif=0):
     print()
     losses = []
     list_data = []
-    
+
     # Open image
-    img = np.array(Image.open("src/templates/cards.png")).mean(axis=2)
+    img = np.array(Image.open("src/templates/spiral.png")).mean(axis=2)
     img = torch.tensor(img)
 
     tqdm_epochs = tqdm(range(epochs+1), desc="Training")
@@ -70,9 +70,9 @@ def train_surface(epochs, lr, device, gif=0):
 
         
         # Convert image to density map
-        # target_density = gray_image_to_density(img).to(device)
+        # target_density = img = density_square().to(device)
         
-        target_density = density_square().to(device)
+        target_density = gray_image_to_density(img).to(device)
 
         target_coords = density_to_random_coords(target_density, radius=1, num_points=batch_size).to(device)
         target_density = coords_to_density(target_coords)
@@ -129,7 +129,7 @@ def train_surface(epochs, lr, device, gif=0):
         tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
 
         if gif > 0 and step % (epochs // gif) == 0:
-            data = validate_surface(mirror_model, raytracer, step, device)
+            data = validate_surface(mirror_model, raytracer, img, step, device)
             list_data.append(data)
 
             
@@ -138,6 +138,6 @@ def train_surface(epochs, lr, device, gif=0):
     print(losses[-1])
     print()
 
-    gif_from_data(list_data)
+    gif_from_data(list_data, fps=5)
 
     return mirror_model, raytracer, losses

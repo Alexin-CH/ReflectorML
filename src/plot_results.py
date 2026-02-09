@@ -20,15 +20,15 @@ def save_gif(outfile, files, fps=5, loop=0):
         loop=loop
     )
 
-def gif_from_data(list_data):
+def gif_from_data(list_data, fps=10):
     files = []
     for i in tqdm(range(len(list_data)), desc="Preparing data"):
-        source_coords, source_density, \
+        img, source_density, \
             predicted_coords, predicted_density, \
                 step = list_data[i]
 
         plot_results(
-            source_coords=source_coords,
+            image=img,
             source_density=source_density,
             predicted_coords=predicted_coords,
             predicted_density=predicted_density,
@@ -42,56 +42,49 @@ def gif_from_data(list_data):
 
         files.append(file)
     
-    save_gif("nn.gif", files, fps=8, loop=0)
+    save_gif("nn.gif", files, fps=fps, loop=0)
 
 # --- VISUALIZATION OF RESULTS ---
-def plot_results(source_coords, source_density, predicted_coords, predicted_density, step=0):
-    source_coords = source_coords.detach().cpu()
+def plot_results(image, source_density, predicted_coords, predicted_density, step=0):
+    image = image.detach().cpu()
     source_density = source_density.detach().cpu()
     predicted_coords = predicted_coords.detach().cpu()
     predicted_density = predicted_density.detach().cpu()
 
     # Create figure
-    plt.figure(figsize=(10, 6), dpi=100)
-    plt.suptitle("Coordinate and Density Distribution Comparison" + 
-                 f" - Training Step {step}", 
-                 fontsize=16, fontweight='bold')
+    plt.figure(figsize=(10, 6), dpi=50)
+    plt.suptitle(f"Training Step {step}", fontsize=16, fontweight='bold')
 
-    # Coordinate Scatter Plots
+    # Target image
     plt.subplot(2, 2, 1)
-    plt.scatter(source_coords[:,0], source_coords[:,1], 
-                s=3, marker="+", alpha=0.5, color='blue', 
-                label='Source Coordinates')
-    plt.title("Input Coordinates", fontweight='bold')
-    plt.xlabel('X Coordinate')
-    plt.ylabel('Y Coordinate')
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.axis('equal')
-
-    # Predicted Coordinate Scatter Plot
-    plt.subplot(2, 2, 2)
-    plt.scatter(predicted_coords[:,0], predicted_coords[:,1], 
-                s=3, marker="+", alpha=0.5, color='red', 
-                label='Predicted Coordinates')
-    plt.title("Target Coordinates", fontweight='bold')
-    plt.xlabel('X Coordinate')
-    plt.ylabel('Y Coordinate')
-    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.imshow(image)
+    plt.title("Target", fontweight='bold')
     plt.axis('equal')
 
     # Source Density Heatmap
-    plt.subplot(2, 2, 3)
+    plt.subplot(2, 2, 2)
     im1 = plt.imshow(source_density, cmap='Greys', 
                      aspect='auto', origin='lower')
     plt.title("Input Density Distribution", fontweight='bold')
     plt.colorbar(im1, label='Density', shrink=0.8)
     plt.axis('equal')
 
+    # Predicted Coordinate Scatter Plot
+    plt.subplot(2, 2, 3)
+    plt.scatter(predicted_coords[:,0], predicted_coords[:,1], 
+                s=3, marker="+", alpha=0.5, color='red', 
+                label='Predicted Coordinates')
+    plt.title("Ouput Coordinates", fontweight='bold')
+    plt.xlabel('X Coordinate')
+    plt.ylabel('Y Coordinate')
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.axis('equal')
+
     # Predicted Density Heatmap
     plt.subplot(2, 2, 4)
     im2 = plt.imshow(predicted_density, cmap='Greys', 
                      aspect='auto', origin='lower')
-    plt.title("Target Density Distribution", fontweight='bold')
+    plt.title("Ouput Density Distribution", fontweight='bold')
     plt.colorbar(im2, label='Density', shrink=0.8)
     plt.axis('equal')
 
