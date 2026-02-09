@@ -1,5 +1,7 @@
 # ReflectorML
 
+## Introduction
+
 Free-form reflector design is essential in optics for precisely shaping light distributions, with applications in automotive lighting, energy-efficient LED optics, laser-based manufacturing, aerospace systems, and medical imaging.
 This problem is mathematically formulated as a non- linear Monge–Ampère equation, which defines the mapping between a given light source and a prescribed target intensity.
 However, traditional numerical solvers for this equation are computationally expensive and often struggle with convergence, particularly in complex boundary conditions.
