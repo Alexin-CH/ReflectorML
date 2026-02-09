@@ -13,12 +13,13 @@ def validate_surface(mirror_model, raytracer, step, device):
     predicted_coords, _ = raytracer(source_coords, deformation)
     
     source_density = coords_to_density(source_coords)
+    predicted_density = coords_to_density(predicted_coords, flip=False)
     
     data = (
         source_coords.detach().cpu(),
         source_density.detach().cpu(),
         predicted_coords.detach().cpu(),
-        coords_to_density(predicted_coords).detach().cpu(),
+        predicted_density.detach().cpu(),
         step
     )
 
