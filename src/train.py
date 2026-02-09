@@ -32,22 +32,16 @@ def train_surface(epochs, lr, device, gif=0):
     optimizer = torch.optim.AdamW(
         params=mirror_model.parameters(),
         lr=lr,
-        weight_decay=1e-4
+        weight_decay=1e-8
     )
 
     # Trying different scheduler
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer=optimizer,
-    #     mode="min",
-    #     factor=0.1,
-    #     patience=100,
-    #     min_lr=1e-8
-    # )
-
-    scheduler = torch.optim.lr_scheduler.PolynomialLR(
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer=optimizer,
-        total_iters=epochs * 1.1,
-        power=2
+        mode="min",
+        factor=0.1,
+        patience=epochs // 10,
+        min_lr=1e-8
     )
 
     # Loss Function (Optimal Transport)
@@ -60,6 +54,10 @@ def train_surface(epochs, lr, device, gif=0):
     print()
     losses = []
     list_data = []
+    
+    # Open image
+    img = np.array(Image.open("src/templates/cards.png")).mean(axis=2)
+    img = torch.tensor(img)
 
     tqdm_epochs = tqdm(range(epochs+1), desc="Training")
     for step in tqdm_epochs:
@@ -70,15 +68,11 @@ def train_surface(epochs, lr, device, gif=0):
         source_coords = sample_beam(batch_size).to(device)
         source_density = coords_to_density(source_coords)
 
-        # Open image
-        # img = np.array(Image.open("src/tux.png")).mean(axis=2)
-        # img = torch.tensor(img)
         
         # Convert image to density map
         # target_density = gray_image_to_density(img).to(device)
         
         target_density = density_square().to(device)
-
 
         target_coords = density_to_random_coords(target_density, radius=1, num_points=batch_size).to(device)
         target_density = coords_to_density(target_coords)
@@ -124,7 +118,7 @@ def train_surface(epochs, lr, device, gif=0):
 
         loss = closure()
         optimizer.step()
-        scheduler.step() # loss.item())
+        scheduler.step(loss.item())
 
         losses.append((
             loss.cpu().item(),
