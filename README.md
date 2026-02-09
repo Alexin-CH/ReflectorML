@@ -39,10 +39,18 @@ make
 
 This repository includes many projects and scripts. Main scripts are located in the `src` directory.
 
-
 - - -
 
+## Results
+
+### Square
 ![square](images/square.gif)
+
+### Spiral
+![spiral](images/spiral.gif)
+
+### Pi
+![pi](images/pi.gif)
 
 ## Thanks
 
