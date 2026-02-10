@@ -65,7 +65,7 @@ def plot_results(image, source_density, predicted_coords, predicted_density, ste
     plt.subplot(2, 2, 2)
     im1 = plt.imshow(source_density, cmap='Greys', 
                      aspect='auto', origin='lower')
-    plt.title("Input Density Distribution", fontweight='bold')
+    plt.title("Input Density", fontweight='bold')
     plt.colorbar(im1, label='Density', shrink=0.8)
     plt.axis('equal')
 
@@ -74,7 +74,7 @@ def plot_results(image, source_density, predicted_coords, predicted_density, ste
     plt.scatter(predicted_coords[:,0], predicted_coords[:,1], 
                 s=3, marker="+", alpha=0.5, color='red', 
                 label='Predicted Coordinates')
-    plt.title("Ouput Coordinates", fontweight='bold')
+    plt.title("Output Coordinates", fontweight='bold')
     plt.xlabel('X Coordinate')
     plt.ylabel('Y Coordinate')
     plt.grid(True, linestyle='--', alpha=0.5)
@@ -84,7 +84,7 @@ def plot_results(image, source_density, predicted_coords, predicted_density, ste
     plt.subplot(2, 2, 4)
     im2 = plt.imshow(predicted_density, cmap='Greys', 
                      aspect='auto', origin='lower')
-    plt.title("Ouput Density Distribution", fontweight='bold')
+    plt.title("Output Density", fontweight='bold')
     plt.colorbar(im2, label='Density', shrink=0.8)
     plt.axis('equal')
 
