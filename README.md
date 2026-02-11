@@ -55,6 +55,13 @@ This repository includes many projects and scripts. Main scripts are located in 
 ### Pi
 ![pi](images/pi.gif)
 
+- - -
+
+## Acknowledgments
+
+This project is inspired by the paper **"A Neural Network Approach for Solving the Monge-Ampère Equation with Transport Boundary Condition"** (arXiv:2410.19496v1, Oct 25, 2024).
+You can read the paper [here](https://arxiv.org/abs/2410.19496).
+
 ## Thanks
 
 Special thanks to **[Valentin MALQUY](https://github.com/Valentin-Malquy)** for their preliminary work on this topic. Your contributions and insights have been invaluable in shaping this project.
