@@ -22,10 +22,10 @@ if __name__ == "__main__":
     # Plot losses
     # losses = torch.tensor(losses)
     # plt.figure()
-    # plt.plot(losses[:, 0])
-    # plt.plot(losses[:, 1])
     # plt.plot(losses[:, 2])
-    # plt.legend(["Total", "Transport", "MA"])
+    # plt.plot(losses[:, 1])
+    # plt.plot(losses[:, 0])
+    # plt.legend(["MA", "Transport", "Total"])
     # plt.yscale('log')
     # plt.grid()
     # plt.pause(2)
