@@ -20,7 +20,7 @@ def save_gif(outfile, files, fps=5, loop=0):
         loop=loop
     )
 
-def gif_from_data(list_data, fps=10):
+def gif_from_data(list_data, title="nn", fps=10):
     files = []
     for i in tqdm(range(len(list_data)), desc="Preparing data"):
         img, source_density, \
@@ -42,7 +42,7 @@ def gif_from_data(list_data, fps=10):
 
         files.append(file)
     
-    save_gif("nn.gif", files, fps=fps, loop=0)
+    save_gif(f"{title}.gif", files, fps=fps, loop=0)
 
 # --- VISUALIZATION OF RESULTS ---
 def plot_results(image, source_density, predicted_coords, predicted_density, step=0):
@@ -57,13 +57,13 @@ def plot_results(image, source_density, predicted_coords, predicted_density, ste
 
     # Target image
     plt.subplot(2, 2, 1)
-    plt.imshow(image)
-    plt.title("Target", fontweight='bold')
+    plt.imshow(image, cmap='gray')
+    plt.title("Target Density", fontweight='bold')
     plt.axis('equal')
 
     # Source Density Heatmap
     plt.subplot(2, 2, 2)
-    im1 = plt.imshow(source_density, cmap='Greys', 
+    im1 = plt.imshow(source_density, cmap='binary', 
                      aspect='auto', origin='lower')
     plt.title("Input Density", fontweight='bold')
     plt.colorbar(im1, label='Density', shrink=0.8)
@@ -82,7 +82,7 @@ def plot_results(image, source_density, predicted_coords, predicted_density, ste
 
     # Predicted Density Heatmap
     plt.subplot(2, 2, 4)
-    im2 = plt.imshow(predicted_density, cmap='Greys', 
+    im2 = plt.imshow(predicted_density, cmap='binary', 
                      aspect='auto', origin='lower')
     plt.title("Output Density", fontweight='bold')
     plt.colorbar(im2, label='Density', shrink=0.8)
