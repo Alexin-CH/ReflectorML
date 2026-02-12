@@ -1,45 +1,44 @@
 import torch
 
-def coords_to_edges(coords, nbins=200):
-    y_targets = coords[:, 0].clone()
-    z_targets = coords[:, 1].clone()
+def coords_to_edges(coords, n_ubins=200, n_vbins=200):
+    u_coords = coords[:, 1].clone()
+    v_coords = coords[:, 0].clone()
 
     # 2D histogram for density
-    y_min, y_max = y_targets.min(), y_targets.max()
-    z_min, z_max = z_targets.min(), z_targets.max()
+    u_min, u_max = u_coords.min(), u_coords.max()
+    v_min, v_max = v_coords.min(), v_coords.max()
 
-    y_edges = torch.linspace(y_min, y_max, nbins).to(coords.device)
-    z_edges = torch.linspace(z_min, z_max, nbins).to(coords.device)
-    return y_edges, z_edges
+    u_edges = torch.linspace(u_min, u_max, n_ubins).to(coords.device)
+    v_edges = torch.linspace(v_min, v_max, n_vbins).to(coords.device)
+    return u_edges, v_edges
 
-def coords_to_density_indices(coords, nbins=200):
-    y_targets = coords[:, 0].clone()
-    z_targets = coords[:, 1].clone()
-    y_edges, z_edges = coords_to_edges(coords, nbins)
+def coords_to_density_indices(coords, n_ubins=200, n_vbins=200):
+    u_coords = coords[:, 1].clone()
+    v_coords = coords[:, 0].clone()
+    u_edges, v_edges = coords_to_edges(coords, n_ubins, n_vbins)
     
     # Find bin indices using torch.bucketize
-    y_indices = torch.bucketize(y_targets, y_edges)
-    z_indices = torch.bucketize(z_targets, z_edges)
+    u_indices = torch.bucketize(u_coords, u_edges)
+    v_indices = torch.bucketize(v_coords, v_edges)
     
     # Filter out indices outside the valid range
-    valid_mask = (y_indices >= 0) & (y_indices < nbins) & \
-                 (z_indices >= 0) & (z_indices < nbins)
+    valid_mask = (u_indices >= 0) & (u_indices < n_ubins) & \
+                 (v_indices >= 0) & (v_indices < n_vbins)
     
-    return y_indices[valid_mask], z_indices[valid_mask]
+    return torch.stack([u_indices[valid_mask], v_indices[valid_mask]], dim=1)
 
-def coords_to_density(coords, nbins=200, flip=True):
-    y_indices, z_indices = coords_to_density_indices(coords, nbins)
-    H = torch.zeros(nbins, nbins, dtype=torch.long, device=coords.device)
+def coords_to_density(coords, n_ubins=200, n_vbins=200, flip=True):
+    indices = coords_to_density_indices(coords, n_ubins, n_vbins)
 
-    for y, z in zip(y_indices, z_indices):
-        H[z, y] += 1
-    
+    H = torch.zeros(n_ubins, n_vbins, dtype=torch.long, device=coords.device)
+    for u, v in indices:
+        H[u, v] += 1
     if flip:
         return torch.flip(H, dims=[0])
     else:
         return H
         
-def density_to_random_coords(density_map, radius, num_points=1000):
+def density_to_random_coords(density_map, max_size=1, num_points=1000):
     # Normalize density
     density_normalized = density_map / density_map.sum()
     flat_density = density_normalized.flatten()
@@ -50,22 +49,22 @@ def density_to_random_coords(density_map, radius, num_points=1000):
     indices = torch.searchsorted(cumulative_density, random_values)
     
     # Convert flat indices to 2D indices
-    y_indices, z_indices = torch.unravel_index(indices, density_map.shape)
+    x_indices, y_indices = torch.unravel_index(indices, density_map.shape)
     
     # Add random offset within the bin
+    x_coords = x_indices + torch.rand(num_points).to(density_map.device)
     y_coords = y_indices + torch.rand(num_points).to(density_map.device)
-    z_coords = z_indices + torch.rand(num_points).to(density_map.device)
     
     # Center
+    x_coords = x_coords - (x_coords.max() + x_coords.min()) / 2
     y_coords = y_coords - (y_coords.max() + y_coords.min()) / 2
-    z_coords = z_coords - (z_coords.max() + z_coords.min()) / 2
 
     # Resize
-    y_coords = y_coords * radius / y_coords.max()
-    z_coords = z_coords * radius / z_coords.max()
+    max_coord = torch.max(x_coords.max(), y_coords.max())
+    x_coords = x_coords * max_size / max_coord
+    y_coords = y_coords * max_size / max_coord
 
-    return torch.column_stack((z_coords, -y_coords))
-
+    return torch.column_stack((y_coords, -x_coords))
 
 def gray_image_to_density(gray_image):
     if gray_image.max() > 1:
