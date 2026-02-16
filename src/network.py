@@ -4,13 +4,14 @@ import torch.nn.functional as F
 
 import numpy as np
 
-# --- THE SURFACE NETWORK (SIREN) ---
-# We use a Sine-based MLP because we need accurate 2nd derivatives (Curvature)
-class SineLayer(nn.Module):
-    def __init__(self, in_features, out_features, bias=True, omega_0=30):
+class FiLMSineLinearLayer(nn.Module):
+    def __init__(self, in_features, out_features, bias=False, omega_0=30):
         super().__init__()
         self.omega_0 = omega_0
         self.linear = nn.Linear(in_features, out_features, bias=bias)
+        self.gamma = nn.Parameter(torch.ones(out_features))
+        self.beta  = nn.Parameter(torch.zeros(out_features))
+
         self.init_weights()
 
     def init_weights(self):
@@ -19,21 +20,22 @@ class SineLayer(nn.Module):
             self.linear.weight.uniform_(-limit, limit)
 
     def forward(self, input):
-        return torch.sin(self.omega_0 * self.linear(input))
+        x = self.gamma * self.linear(input) + self.beta
+        return torch.sin(self.omega_0 * x)
 
 class MirrorSurface(nn.Module):
     def __init__(self):
         super().__init__()
-        # Input: (x, z) coordinates on the aperture plane
-        # Output: y height deviation from the base 45-degree plane
         
         self.net = nn.Sequential(
-            SineLayer(2, 256, omega_0=40),
-            SineLayer(256, 256, omega_0=30),
-            SineLayer(256, 256, omega_0=20),
-            SineLayer(256, 256, omega_0=10),
+            FiLMSineLinearLayer(2, 512, omega_0=40),
+            FiLMSineLinearLayer(512, 256, omega_0=30),
+            FiLMSineLinearLayer(256, 256, omega_0=20),
+            FiLMSineLinearLayer(256, 256, omega_0=10),
             nn.Linear(256, 1)
         )
+
+        self.FiLM_parameters = [(l.gamma, l.beta) for l in self.net[:-1]]
         
         # Initialize final layer to be very close to 0
         # This ensures we start with a perfect 45-degree planar mirror
@@ -44,5 +46,4 @@ class MirrorSurface(nn.Module):
     def forward(self, coords):        
         # Neural offset (The freeform deformation)
         deformation = self.net(coords)
-        
         return deformation
