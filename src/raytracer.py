@@ -46,4 +46,4 @@ class MirrorRayTracer(nn.Module):
         y_target = y_surf + t * v_refl[:, 1:2]
         z_target = z_surf + t * v_refl[:, 2:3]
         
-        return torch.cat([y_target, z_target], dim=1), grads
+        return torch.cat([y_target, z_target], dim=1)
