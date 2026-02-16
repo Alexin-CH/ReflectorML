@@ -46,7 +46,7 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
 
     # Loss Function (Optimal Transport)
     # "sinkhorn" is an approximate Wasserstein distance, fully differentiable
-    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=1, blur=1e-8, scaling=0.9)
+    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=1, blur=1e-8, scaling=0.6)
     
     # Optimization Loop
     print()
@@ -118,7 +118,7 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
         
         # Forward Raytracing
         deformation = mirror_model(source_coords)
-        predicted_coords, _ = raytracer(source_coords, deformation)
+        predicted_coords = raytracer(source_coords, deformation)
         
         # Transport Loss (Sinkhorn) - Gives global structure
         transport_loss = sinkhorn_loss(predicted_coords, target_coords)
