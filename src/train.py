@@ -141,7 +141,7 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
             optimizer.zero_grad()
             physics_loss = beta * cv_loss + (1 - beta) * ma_loss
 
-            total_loss = alpha * transport_loss + (1 - beta) * physics_loss
+            total_loss = alpha * transport_loss + (1 - alpha) * physics_loss
             loss = criterion(total_loss * 1e3, zero)
             
             loss.backward()
