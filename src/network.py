@@ -34,8 +34,6 @@ class MirrorSurface(nn.Module):
             FiLMSineLinearLayer(256, 256, omega_0=10),
             nn.Linear(256, 1)
         )
-
-        self.FiLM_parameters = [(l.gamma, l.beta) for l in self.net[:-1]]
         
         # Initialize final layer to be very close to 0
         # This ensures we start with a perfect 45-degree planar mirror
