@@ -27,9 +27,9 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
     zero = torch.tensor(0.).to(device)
 
     mirror_model = MirrorSurface().to(device)
-    raytracer = MirrorRayTracer(target_x=5).to(device)
+    raytracer = MirrorRayTracer(target_x=10).to(device)
 
-    optimizer = torch.optim.AdamW(
+    optimizer = torch.optim.Adam(
         params=mirror_model.parameters(),
         lr=lr,
         weight_decay=1e-8
@@ -46,7 +46,7 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
 
     # Loss Function (Optimal Transport)
     # "sinkhorn" is an approximate Wasserstein distance, fully differentiable
-    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=1, blur=1e-8, scaling=0.6)
+    sinkhorn_loss = SamplesLoss(loss="sinkhorn", p=1, blur=1e-8, scaling=0.9)
     
     # Optimization Loop
     print()
@@ -135,14 +135,14 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
         )
         
         def closure():
-            alpha = 0.8
-            beta = 0.8
+            alpha = 0.7
+            beta = 0.5
 
             optimizer.zero_grad()
             physics_loss = beta * cv_loss + (1 - beta) * ma_loss
 
             total_loss = alpha * transport_loss + (1 - alpha) * physics_loss
-            loss = criterion(total_loss * 1e3, zero)
+            loss = criterion(total_loss, zero)
             
             loss.backward()
             return loss
@@ -154,7 +154,8 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
         losses.append((
             loss.cpu().item(),
             transport_loss.cpu().item(),
-            ma_loss.cpu().item()
+            ma_loss.cpu().item(),
+            cv_loss.cpu().item()
         ))
 
         tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")

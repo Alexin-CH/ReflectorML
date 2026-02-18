@@ -14,7 +14,7 @@ if __name__ == "__main__":
             target=target,
             res_divfactor=1,
             epochs=2e2,
-            batch_size=1024*2*2,
+            batch_size=1024*2,
             lr=1e-4,
             device=device,
             gif=20
