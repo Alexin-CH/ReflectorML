@@ -9,7 +9,7 @@ print(f"Using device: {device}")
 
 if __name__ == "__main__":
 
-    for target in ["pi"]: # , "bat", "cards", "heart", "pi", "plus", "qm", "spiral"]:
+    for target in ["pi"]: # , "bat", "cards", "heart", "square", "plus", "qm", "spiral"]:
         trained_model, raytracer, losses = train_surface(
             target=target,
             res_divfactor=1,
@@ -21,7 +21,6 @@ if __name__ == "__main__":
         )
 
         # Plot losses
-        losses = torch.tensor(losses)
         plt.figure()
         plt.plot(losses[:, 2])
         plt.plot(losses[:, 1])
@@ -30,4 +29,4 @@ if __name__ == "__main__":
         plt.yscale('log')
         plt.grid()
         plt.savefig(f"{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
-        plt.pause(2)
+        plt.pause(0.1)

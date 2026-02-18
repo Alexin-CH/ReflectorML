@@ -1,9 +1,8 @@
 import os
 import torch
 import torch.nn as nn
-
 import numpy as np
-import torch
+
 import matplotlib.pyplot as plt
 from PIL import Image
 from geomloss import SamplesLoss
@@ -59,21 +58,28 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
     # Open image
     source_img = np.array(Image.open("src/templates/circle.png"))
     source_img = torch.tensor(source_img)
+    source_density = gray_image_to_density(source_img).to(device)
 
     target_img = np.array(Image.open(f"src/templates/{target}.png")).mean(axis=2)
     target_img = torch.tensor(target_img)
+    target_density = gray_image_to_density(target_img).to(device)
 
     resolution = np.array([
         [source_img.shape[0], source_img.shape[1]],
         [target_img.shape[0], target_img.shape[1]]
     ]) // res_divfactor
 
+    #
+    # #
+    # # #
+    # #
+    #
+
     tqdm_epochs = tqdm(range(epochs+1), desc="Training")
     for step in tqdm_epochs:
 
         # Convert images to density map and random coordinates
         # Source
-        source_density = gray_image_to_density(source_img).to(device)
         source_coords = density_to_random_coords(
             density_map=source_density,
             num_points=batch_size
@@ -86,7 +92,6 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
         )
         
         # Target
-        target_density = gray_image_to_density(target_img).to(device)
         target_coords = density_to_random_coords(
             density_map=target_density,
             max_size=1,
@@ -179,4 +184,4 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
 
     if gif > 0: gif_from_data(list_data, title=target, fps=5)
 
-    return mirror_model, raytracer, losses
+    return mirror_model, raytracer, torch.tensor(losses)
