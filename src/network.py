@@ -4,42 +4,51 @@ import torch.nn.functional as F
 
 import numpy as np
 
-class FiLMSineLinearLayer(nn.Module):
-    def __init__(self, in_features, out_features, bias=False, omega_0=30):
+class SirenLayer(nn.Module):
+    def __init__(self, in_features, out_features, bias=True, w0=30):
         super().__init__()
-        self.omega_0 = omega_0
+        self.w0 = w0
         self.linear = nn.Linear(in_features, out_features, bias=bias)
-        self.gamma = nn.Parameter(torch.ones(out_features))
-        self.beta  = nn.Parameter(torch.zeros(out_features))
-
-        self.init_weights()
-
-    def init_weights(self):
-        with torch.no_grad():
-            limit = np.sqrt(6 / self.linear.weight.shape[1]) / self.omega_0
-            self.linear.weight.uniform_(-limit, limit)
 
     def forward(self, input):
-        x = self.gamma * self.linear(input) + self.beta
-        return torch.sin(self.omega_0 * x)
+        x = self.linear(input)
+        return torch.sin(self.w0 * x)
+
+class HSirenLayer(nn.Module):
+    def __init__(self, in_features, out_features, bias=True, w0=30):
+        super().__init__()
+        self.w0 = w0
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, input):
+        x = torch.sinh(2 * self.linear(input))
+        return torch.sin(self.w0 * x)
 
 class MirrorSurface(nn.Module):
     def __init__(self):
         super().__init__()
         
         self.net = nn.Sequential(
-            FiLMSineLinearLayer(2, 512, omega_0=40),
-            FiLMSineLinearLayer(512, 256, omega_0=30),
-            FiLMSineLinearLayer(256, 256, omega_0=20),
-            FiLMSineLinearLayer(256, 256, omega_0=10),
-            nn.Linear(256, 1)
+            SirenLayer(2, 512),
+            SirenLayer(512, 256),
+            SirenLayer(256, 256),
+            HSirenLayer(256, 1)
         )
         
-        # Initialize final layer to be very close to 0
-        # This ensures we start with a perfect 45-degree planar mirror
         with torch.no_grad():
-            self.net[-1].weight.uniform_(-1e-8, 1e-8)
-            self.net[-1].bias.zero_()
+            # Siren first layer initialization
+            limit = 1 / self.net[0].linear.weight.shape[1]
+            self.net[0].linear.weight.uniform_(-limit, limit)
+
+            # Siren non-first layers initialization
+            for layer in self.net[1:-1]:
+                limit = np.sqrt(6 / layer.linear.weight.shape[1]) / layer.w0
+                layer.linear.weight.uniform_(-limit, limit)
+
+            # Initialize final layer to be very close to 0
+            # This ensures we start with an almost perfect 45-degree planar mirror
+            # This is very important to avoid divergence !
+            self.net[-1].linear.weight.uniform_(-1e-8, 1e-8)
 
     def forward(self, coords):        
         # Neural offset (The freeform deformation)
