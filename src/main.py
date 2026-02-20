@@ -5,19 +5,22 @@ from train import train_surface
 
 try_cuda = True
 device = torch.device('cuda' if try_cuda and torch.cuda.is_available() else 'cpu')
+
 print(f"Using device: {device}")
+print(f"Seed: {torch.seed()}")
 
 if __name__ == "__main__":
 
-    for target in ["pi"]: # , "bat", "cards", "heart", "square", "plus", "qm", "spiral"]:
+    for target in ["pi", "bat", "cards", "heart", "square", "plus", "qm", "spiral"]:
         trained_model, raytracer, losses = train_surface(
             target=target,
-            res_divfactor=1,
-            epochs=2e2,
-            batch_size=1024*2,
+            res_factor=4,
+            epochs=200,
+            batch_size=2048,
+            num_batch=1,
             lr=1e-4,
             device=device,
-            gif=20
+            gif=40
         )
 
         # Plot losses
@@ -29,4 +32,4 @@ if __name__ == "__main__":
         plt.yscale('log')
         plt.grid()
         plt.savefig(f"{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
-        plt.pause(0.1)
+        plt.close()
