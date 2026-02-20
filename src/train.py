@@ -18,9 +18,11 @@ from plot_results import gif_from_data
 
 
 # --- TRAINING LOOP ---
-def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
+def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device, gif=0):
     # Setup
     epochs = int(epochs)
+    gif = min(max(0, gif), epochs)
+    num_batch = min(max(1, num_batch), epochs)
     
     criterion = nn.HuberLoss()
     zero = torch.tensor(0.).to(device)
@@ -28,7 +30,7 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
     mirror_model = MirrorSurface().to(device)
     raytracer = MirrorRayTracer(target_x=10).to(device)
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         params=mirror_model.parameters(),
         lr=lr,
         weight_decay=1e-8
@@ -39,8 +41,8 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
         optimizer=optimizer,
         mode="min",
         factor=0.1,
-        patience=epochs // 10,
-        min_lr=1e-8
+        patience=5,
+        min_lr=lr * 1e-5
     )
 
     # Loss Function (Optimal Transport)
@@ -67,7 +69,7 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
     resolution = np.array([
         [source_img.shape[0], source_img.shape[1]],
         [target_img.shape[0], target_img.shape[1]]
-    ]) // res_divfactor
+    ]) // res_factor
 
     #
     # #
@@ -75,34 +77,48 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
     # #
     #
 
-    tqdm_epochs = tqdm(range(epochs+1), desc="Training")
+    tqdm_epochs = tqdm(range(epochs+1), desc="Training", dynamic_ncols=True)
     for step in tqdm_epochs:
 
-        # Convert images to density map and random coordinates
-        # Source
-        source_coords = density_to_random_coords(
-            density_map=source_density,
-            num_points=batch_size
-        ).to(device).requires_grad_(True)
+        if step % (epochs // num_batch) == 0 and step < epochs:
+            # Convert images to density map and random coordinates
+            # Source
+            source_coords = density_to_random_coords(
+                density_map=source_density,
+                num_points=batch_size
+            ).to(device).requires_grad_(True)
 
-        source_density = coords_to_density(
-            coords=source_coords,
-            n_ubins=resolution[0, 0],
-            n_vbins=resolution[0, 1]
-        )
-        
-        # Target
-        target_coords = density_to_random_coords(
-            density_map=target_density,
-            max_size=1,
-            num_points=batch_size
-        ).to(device)
+            source_density = coords_to_density(
+                coords=source_coords,
+                n_ubins=resolution[0, 0],
+                n_vbins=resolution[0, 1]
+            )
+            
+            # Target
+            target_coords = density_to_random_coords(
+                density_map=target_density,
+                max_size=1,
+                num_points=batch_size
+            ).to(device)
 
-        target_density = coords_to_density(
-            coords=target_coords,
-            n_ubins=resolution[1, 0],
-            n_vbins=resolution[1, 1]
-        )
+            target_density = coords_to_density(
+                coords=target_coords,
+                n_ubins=resolution[1, 0],
+                n_vbins=resolution[1, 1]
+            )
+
+        # Validation
+        if gif > 0 and step % (epochs // gif) == 0:
+            data = validate_surface(
+                mirror_model=mirror_model,
+                raytracer=raytracer,
+                source_img=source_img,
+                target_img=target_img,
+                step=step,
+                resolution=resolution,
+                device=device
+            )
+            list_data.append(data)
 
         # Plot figures
         # import matplotlib.pyplot as plt
@@ -140,19 +156,21 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
         )
         
         def closure():
-            alpha = 0.7
-            beta = 0.5
+            alpha = 1
+            beta = 0.1
+            gamma = 0.1
 
             optimizer.zero_grad()
-            physics_loss = beta * cv_loss + (1 - beta) * ma_loss
+            physics_loss = beta * ma_loss + gamma * cv_loss
 
-            total_loss = alpha * transport_loss + (1 - alpha) * physics_loss
+            total_loss = alpha * transport_loss +  physics_loss
             loss = criterion(total_loss, zero)
             
             loss.backward()
             return loss
 
         loss = closure()
+
         optimizer.step()
         scheduler.step(loss.item())
 
@@ -163,19 +181,15 @@ def train_surface(target, res_divfactor, epochs, batch_size, lr, device, gif=0):
             cv_loss.cpu().item()
         ))
 
-        tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
+        if torch.isnan(loss) or loss // losses[0][0] > 1e2:
+            raise RuntimeError("Unexpected loss evolution, exiting...")
 
-        if gif > 0 and step % (epochs // gif) == 0:
-            data = validate_surface(
-                mirror_model=mirror_model,
-                raytracer=raytracer,
-                source_img=source_img,
-                target_img=target_img,
-                step=step,
-                resolution=resolution,
-                device=device
-            )
-            list_data.append(data)
+        # Save best model
+        # if loss.item() < loss_min if 'loss_min' in locals() else np.inf:
+        #     mirror_model.save_model(f"{target}_best_weights.pt")
+        #     loss_min = loss.item()
+            
+        tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
             
     print()
     print(losses[0])
