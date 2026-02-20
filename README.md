@@ -44,7 +44,7 @@ This repository includes many projects and scripts. Main scripts are located in 
 
 - - -
 
-## Results
+## Results ([See more](images/))
 
 ### Square
 ![square](images/square.gif)

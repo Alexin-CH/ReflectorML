@@ -10,14 +10,14 @@ def validate_surface(mirror_model, raytracer, source_img, target_img, step, reso
     source_density = gray_image_to_density(source_img).to(device)
     source_coords = density_to_random_coords(
         density_map=source_density,
-        num_points=75*1000
+        num_points=25*1000
     ).to(device).requires_grad_(True)
 
     deformation = mirror_model(source_coords)
     predicted_coords = raytracer(source_coords, deformation)
 
-    x = torch.linspace(-1, 1, 100).to(device)
-    y = torch.linspace(-1, 1, 100).to(device)
+    x = torch.linspace(-1.1, 1.1, 100).to(device)
+    y = torch.linspace(-1.1, 1.1, 100).to(device)
     grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
     
     # Flatten grid for model input
@@ -27,7 +27,7 @@ def validate_surface(mirror_model, raytracer, source_img, target_img, step, reso
     grid_deformation = mirror_model(grid_coords)
     
     # Reshape back to grid for plotting/analysis
-    surface_mesh = grid_deformation.view(100, 100)
+    surface_mesh = torch.flip(grid_deformation.view(100, 100).T, dims=[0, 1])
     
     source_density = coords_to_density(
         coords=source_coords,

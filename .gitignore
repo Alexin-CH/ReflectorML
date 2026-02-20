@@ -5,3 +5,11 @@ env
 
 __pycache__
 plots/
+
+/*.pt
+/*.jpg
+/*.png
+/*.gif
+!/images/*.jpg
+!/images/*.png
+!/images/*.gif
