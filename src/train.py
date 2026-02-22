@@ -9,7 +9,7 @@ from geomloss import SamplesLoss
 from tqdm import tqdm
 
 from sources import coords_to_density, density_to_random_coords, \
-    gray_image_to_density, sample_beam, density_square
+    gray_image_to_density, coords_beam, density_beam
 from validation import validate_surface
 from network import MirrorSurface
 from raytracer import MirrorRayTracer
@@ -24,7 +24,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     gif = min(max(0, gif), epochs)
     num_batch = min(max(1, num_batch), epochs)
     
-    criterion = nn.HuberLoss()
+    criterion = nn.MSELoss()
     zero = torch.tensor(0.).to(device)
 
     mirror_model = MirrorSurface().to(device)
@@ -82,39 +82,48 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
 
         if step % (epochs // num_batch) == 0 and step < epochs:
             # Convert images to density map and random coordinates
-            # Source
+            # Source coords
             source_coords = density_to_random_coords(
                 density_map=source_density,
                 num_points=batch_size
             ).to(device).requires_grad_(True)
 
+            # Source density
             source_density = coords_to_density(
                 coords=source_coords,
                 n_ubins=resolution[0, 0],
                 n_vbins=resolution[0, 1]
             )
             
-            # Target
+            # Target coords
             target_coords = density_to_random_coords(
                 density_map=target_density,
                 max_size=1,
                 num_points=batch_size
             ).to(device)
 
+            # Target density
             target_density = coords_to_density(
                 coords=target_coords,
                 n_ubins=resolution[1, 0],
                 n_vbins=resolution[1, 1]
             )
 
+            # Reset LR
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr
+
         # Validation
         if gif > 0 and step % (epochs // gif) == 0:
+
             data = validate_surface(
                 mirror_model=mirror_model,
                 raytracer=raytracer,
                 source_img=source_img,
                 target_img=target_img,
                 step=step,
+                batch_size=batch_size,
+                res_factor=res_factor,
                 resolution=resolution,
                 device=device
             )
@@ -156,9 +165,9 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         )
         
         def closure():
-            alpha = 1
-            beta = 0.1
-            gamma = 0.1
+            alpha = 2
+            beta = 1
+            gamma = 1
 
             optimizer.zero_grad()
             physics_loss = beta * ma_loss + gamma * cv_loss
@@ -178,7 +187,8 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             loss.cpu().item(),
             transport_loss.cpu().item(),
             ma_loss.cpu().item(),
-            cv_loss.cpu().item()
+            cv_loss.cpu().item(),
+            scheduler.get_last_lr()[0]
         ))
 
         if torch.isnan(loss) or loss // losses[0][0] > 1e2:
@@ -191,11 +201,14 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             
         tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
             
+    fl, ll = losses[0], losses[-1]
     print()
-    print(losses[0])
-    print(losses[-1])
+    print(f"Total     {fl[0]:.6f} -> {ll[0]:.6f} ({int((ll[0] - fl[0]) / fl[0] * 100)}%)")
+    print(f"Transport {fl[1]:.6f} -> {ll[1]:.6f} ({int((ll[1] - fl[1]) / fl[1] * 100)}%)")
+    print(f"MA        {fl[2]:.6f} -> {ll[2]:.6f} ({int((ll[2] - fl[2]) / fl[2] * 100)}%)")
+    print(f"CV        {fl[3]:.6f} -> {ll[3]:.6f} ({int((ll[3] - fl[3]) / fl[3] * 100)}%)")
     print()
 
-    if gif > 0: gif_from_data(list_data, title=target, fps=5)
+    if gif > 0: gif_from_data(list_data, title=f"target_{target}", fps=5)
 
     return mirror_model, raytracer, torch.tensor(losses)

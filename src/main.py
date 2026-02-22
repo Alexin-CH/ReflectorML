@@ -1,5 +1,6 @@
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.ticker import StrMethodFormatter
 
 from train import train_surface
 
@@ -11,25 +12,39 @@ print(f"Seed: {torch.seed()}")
 
 if __name__ == "__main__":
 
-    for target in ["pi", "bat", "cards", "heart", "square", "plus", "qm", "spiral"]:
+    for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm"]:
         trained_model, raytracer, losses = train_surface(
             target=target,
-            res_factor=4,
-            epochs=200,
-            batch_size=2048,
+            res_factor=10,
+            epochs=100,
             num_batch=1,
-            lr=1e-4,
+            batch_size=2048*2,
+            lr=1e-5,
             device=device,
             gif=40
         )
 
         # Plot losses
-        plt.figure()
-        plt.plot(losses[:, 2])
-        plt.plot(losses[:, 1])
-        plt.plot(losses[:, 0])
-        plt.legend(["MA", "Transport", "Total"])
-        plt.yscale('log')
-        plt.grid()
-        plt.savefig(f"{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
+        fig, (ax1, ax2) = plt.subplots(
+            nrows=2,
+            ncols=1,
+            gridspec_kw={'height_ratios': [3, 1]}
+        )
+
+        plt.suptitle(f"Losses - Target: {target}")
+
+        ax1.plot(losses[:, 2])
+        ax1.plot(losses[:, 1])
+        ax1.plot(losses[:, 0])
+        ax1.legend(["MA", "Transport", "Total"])
+        ax1.set_yscale('log')
+        ax1.grid()
+
+        ax2.plot(losses[:, -1])
+        ax2.legend(["LR"])
+        ax2.set_yscale('linear')
+        ax2.yaxis.set_major_formatter(StrMethodFormatter('{x:.1e}'))
+        ax2.grid()
+
+        plt.savefig(f"target_{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
         plt.close()
