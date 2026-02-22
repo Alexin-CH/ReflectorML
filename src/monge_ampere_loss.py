@@ -4,6 +4,16 @@ from torch.func import hessian, vmap
 from sources import coords_to_density_indices
 
 def compute_ma_losses(model, source_coords, source_density, target_coords, target_density, resolution):
+    # Test MA
+    # num_points = 100
+    # x_max, y_max = source_coords[:, 0].max(), source_coords[:, 1].max()
+    # x = torch.linspace(-1.1 * x_max, 1.1 * x_max, num_points).to(device)
+    # y = torch.linspace(-1.1 * y_max, 1.1 * y_max, num_points).to(device)
+    # grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
+
+    # grid_coords = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
+    # grid_density = 
+    
     # MA
     single_hess = lambda x: hessian(model)(x)
     hessians = vmap(single_hess)(source_coords).squeeze()

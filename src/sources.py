@@ -77,7 +77,7 @@ def gray_image_to_density(gray_image):
 # #
 #
 
-def sample_beam(n, radius=1):
+def coords_beam(n, radius=1):
     # Circular beam
     r = torch.sqrt(torch.rand(n, 1)) * radius
     theta = torch.rand(n, 1) * 2 * torch.pi
@@ -85,26 +85,26 @@ def sample_beam(n, radius=1):
     z = r * torch.sin(theta)
     return torch.cat([x, z], dim=1).requires_grad_(True)
     
-def sample_square(n, width=1):
+def coords_square(n, width=1):
     # Simple square
     points = (torch.rand(n, 2) - 0.5) * width  # Range -width/2 to width/2
     return points.requires_grad_(True)
 
-def sample_ellipse(n, major_axis=2, minor_axis=0.5):
+def coords_ellipse(n, major_axis=2, minor_axis=0.5):
     # Elliptical shape
     theta = torch.rand(n, 1) * 2 * torch.pi
     x = major_axis * torch.cos(theta)
     z = minor_axis * torch.sin(theta)
     return torch.cat([x, z], dim=1).requires_grad_(True)
 
-def sample_triangle(n, size=1):
+def coords_triangle(n, size=1):
     # Equilateral triangle
     points = torch.rand(n, 2)
     points = points * size
     points[:, 1] = points[:, 1] * (1 - points[:, 0])  # Ensures the points are inside the triangle
     return points.requires_grad_(True)
 
-def sample_spiral(n, turns=3, radius=1.0, noise=0.02):
+def coords_spiral(n, turns=3, radius=1.0, noise=0.02):
     # Archimedean spiral: r ~ t, t in [0, turns*2pi]
     t = torch.linspace(0, turns * 2 * torch.pi, steps=n).unsqueeze(1)
     r = (t / (turns * 2 * torch.pi)) * radius
@@ -112,7 +112,7 @@ def sample_spiral(n, turns=3, radius=1.0, noise=0.02):
     y = r * torch.sin(t) + torch.randn(n, 1) * noise
     return torch.cat([x, y], dim=1).requires_grad_(True)
 
-def sample_l_shape(n, arm_length=1.0, arm_width=0.2):
+def coords_l_shape(n, arm_length=1.0, arm_width=0.2):
     # L shape composed of two rectangles joined at origin: vertical and horizontal arms
     # We'll sample proportionally to area of arms
     area_h = arm_length * arm_width
@@ -143,10 +143,10 @@ def sample_l_shape(n, arm_length=1.0, arm_width=0.2):
 # #
 #
 
-def density_beam(radius=1.0, nbins=200):
+def density_beam(radius=1.0, n_ubins=200, n_vbins=200):
     # Create coordinate grid
-    x = torch.linspace(-radius, radius, nbins)
-    y = torch.linspace(-radius, radius, nbins)
+    x = torch.linspace(-radius, radius, n_ubins)
+    y = torch.linspace(-radius, radius, n_vbins)
     xx, yy = torch.meshgrid(x, y, indexing='ij')
     
     # Calculate radial distance
@@ -159,10 +159,10 @@ def density_beam(radius=1.0, nbins=200):
     density = density / density.sum()
     return density
 
-def density_square(width=1.0, nbins=200):
+def density_square(width=1.0, n_ubins=200, n_vbins=200):
     # Create coordinate grid
-    x = torch.linspace(-width/2, width/2, nbins)
-    y = torch.linspace(-width/2, width/2, nbins)
+    x = torch.linspace(-width/2, width/2, n_ubins)
+    y = torch.linspace(-width/2, width/2, n_vbins)
     xx, yy = torch.meshgrid(x, y, indexing='ij')
     
     # Create square density
