@@ -38,15 +38,17 @@ def coords_to_density(coords, n_ubins=200, n_vbins=200, flip=True):
     else:
         return H
         
-def density_to_random_coords(density_map, max_size=1, num_points=1000):
+def density_to_coords(density_map, d0, axis, max_size=1, num_points=1000, p=1):
     # Normalize density
     density_normalized = density_map / density_map.sum()
     flat_density = density_normalized.flatten()
     cumulative_density = torch.cumsum(flat_density, dim=0)
     
-    # Generate random values
-    random_values = torch.rand(num_points).to(density_map.device)
-    indices = torch.searchsorted(cumulative_density, random_values)
+    
+    # Generate pseudo-random values
+    values = torch.linspace(0, 1, num_points + 1).to(density_map.device)[1:]
+
+    indices = torch.searchsorted(cumulative_density, values ** p)
     
     # Convert flat indices to 2D indices
     x_indices, y_indices = torch.unravel_index(indices, density_map.shape)
