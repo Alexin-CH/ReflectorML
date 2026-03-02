@@ -62,14 +62,17 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     source_img = torch.tensor(source_img)
     source_density = gray_image_to_density(source_img).to(device)
 
-    target_img = np.array(Image.open(f"src/templates/{target}.png")).mean(axis=2)
-    target_img = torch.tensor(target_img)
-    target_density = gray_image_to_density(target_img).to(device)
+    target_img_pil = Image.open(f"src/templates/{target}.png")
+    target_img = np.array(target_img_pil).mean(axis=2)
 
     resolution = np.array([
         [source_img.shape[0], source_img.shape[1]],
         [target_img.shape[0], target_img.shape[1]]
     ]) // res_factor
+
+    target_img_pil = target_img_pil.resize((resolution[1][1], resolution[1][0]))
+    target_img = torch.tensor(np.array(target_img_pil).mean(axis=2))
+    target_density = gray_image_to_density(target_img).to(device)
 
     #
     # #
@@ -201,14 +204,16 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             
         tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
             
-    fl, ll = losses[0], losses[-1]
+    losses = torch.tensor(losses)
+    lmin = torch.tensor(1e-8).to(losses.device)
+    fl, ll = torch.max(losses[0], lmin), torch.max(losses[-1], lmin)
     print()
-    print(f"Total     {fl[0]:.6f} -> {ll[0]:.6f} ({int((ll[0] - fl[0]) / fl[0] * 100)}%)")
-    print(f"Transport {fl[1]:.6f} -> {ll[1]:.6f} ({int((ll[1] - fl[1]) / fl[1] * 100)}%)")
-    print(f"MA        {fl[2]:.6f} -> {ll[2]:.6f} ({int((ll[2] - fl[2]) / fl[2] * 100)}%)")
-    print(f"CV        {fl[3]:.6f} -> {ll[3]:.6f} ({int((ll[3] - fl[3]) / fl[3] * 100)}%)")
+    print(f"Total     {fl[0]:.6f} -> {ll[0]:.6f} ({(ll[0] - fl[0]) / fl[0] * 100}%)")
+    print(f"Transport {fl[1]:.6f} -> {ll[1]:.6f} ({(ll[1] - fl[1]) / fl[1] * 100}%)")
+    print(f"MA        {fl[2]:.6f} -> {ll[2]:.6f} ({(ll[2] - fl[2]) / fl[2] * 100}%)")
+    print(f"CV        {fl[3]:.6f} -> {ll[3]:.6f} ({(ll[3] - fl[3]) / fl[3] * 100}%)")
     print()
 
     if gif > 0: gif_from_data(list_data, title=f"target_{target}", fps=5)
 
-    return mirror_model, raytracer, torch.tensor(losses)
+    return mirror_model, raytracer, losses
