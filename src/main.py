@@ -1,7 +1,9 @@
 import time
 import torch
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.ticker import StrMethodFormatter
+from matplotlib.ticker import StrMethodFormatter, LogFormatterMathtext
 
 from train import train_surface
 
@@ -15,7 +17,7 @@ if __name__ == "__main__":
     
     t0 = time.time()
     for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm"]:
-        trained_model, raytracer, losses = train_surface(
+        trained_model, raytracer, losses, loss_report = train_surface(
             target=target,
             res_factor=2,
             epochs=2e2,
@@ -27,10 +29,10 @@ if __name__ == "__main__":
         )
 
         # Plot losses
-        fig, (ax1, ax2) = plt.subplots(
-            nrows=2,
+        fig, (ax1, ax2, ax3) = plt.subplots(
+            nrows=3,
             ncols=1,
-            gridspec_kw={'height_ratios': [3, 1]}
+            height_ratios=[2, 1, 0.2]
         )
 
         plt.suptitle(f"Losses - Target: {target}")
@@ -39,19 +41,24 @@ if __name__ == "__main__":
         ax1.plot(losses[:, 1])
         ax1.plot(losses[:, 0])
         ax1.legend(["MA", "Transport", "Total"])
+        ax1.set_xticklabels([])
         ax1.set_yscale('log')
         ax1.grid()
 
         ax2.plot(losses[:, -1])
         ax2.legend(["LR"])
         ax2.set_yscale('linear')
-        ax2.yaxis.set_major_formatter(StrMethodFormatter('{x:.1e}'))
+        ax2.yaxis.set_major_formatter(LogFormatterMathtext()) # StrMethodFormatter('{x:.1e}'))
         ax2.grid()
 
-        plt.savefig(f"target_{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
-        plt.close()
+        ax3.axis('off')
+        ax3.text(
+            0, -0.1, loss_report, transform=ax3.transAxes,
+            fontsize=10, fontfamily='monospace', va='top', ha='left'
+        )
 
-        break
+        plt.savefig(f"target_{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
+        plt.close('all')
 
     t_final = time.time() - t0
     t_h = t_final // 3600
