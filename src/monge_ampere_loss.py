@@ -1,6 +1,9 @@
 import torch
 from torch.func import hessian, vmap
 
+import matplotlib
+matplotlib.use('Agg')
+
 from sources import coords_to_density_indices
 
 def compute_ma_losses(model, source_coords, source_density, target_coords, target_density, resolution):
@@ -23,6 +26,15 @@ def compute_ma_losses(model, source_coords, source_density, target_coords, targe
 
     f = source_density[sources_indices[:, 0].tolist(), sources_indices[:, 1].tolist()]
     g = target_density[target_indices[:, 0].tolist(), target_indices[:, 1].tolist()]
+
+    # DEBUG Plot
+    # import matplotlib.pyplot as plt
+    # plt.figure()
+    # plt.imshow(source_density.cpu())
+    # plt.show()
+    # plt.figure()
+    # plt.imshow(target_density.cpu())
+    # plt.show()
 
     ma_losses = det_hessians * g - f
 

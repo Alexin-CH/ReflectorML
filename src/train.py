@@ -3,19 +3,27 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 from PIL import Image
 from geomloss import SamplesLoss
 from tqdm import tqdm
 
-from sources import coords_to_density, density_to_random_coords, \
-    gray_image_to_density, sample_beam, density_square
+from sources import coords_to_density, density_to_coords, \
+    gray_image_to_density, coords_beam, density_beam
 from validation import validate_surface
 from network import MirrorSurface
 from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses
 from plot_results import gif_from_data
 
+
+def pct_change(a, b):
+    a_f = float(a)
+    b_f = float(b)
+    return (b_f - a_f) / a_f * 100.0 if a_f != 0 else float('nan')
 
 # --- TRAINING LOOP ---
 def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device, gif=0):
@@ -24,7 +32,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     gif = min(max(0, gif), epochs)
     num_batch = min(max(1, num_batch), epochs)
     
-    criterion = nn.HuberLoss()
+    criterion = nn.MSELoss()
     zero = torch.tensor(0.).to(device)
 
     mirror_model = MirrorSurface().to(device)
@@ -59,17 +67,20 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
 
     # Open image
     source_img = np.array(Image.open("src/templates/circle.png"))
-    source_img = torch.tensor(source_img)
+    source_img = torch.tensor(source_img, dtype=torch.long)
     source_density = gray_image_to_density(source_img).to(device)
 
-    target_img = np.array(Image.open(f"src/templates/{target}.png")).mean(axis=2)
-    target_img = torch.tensor(target_img)
-    target_density = gray_image_to_density(target_img).to(device)
+    target_img_pil = Image.open(f"src/templates/{target}.png")
+    target_img = np.array(target_img_pil).mean(axis=2)
 
     resolution = np.array([
         [source_img.shape[0], source_img.shape[1]],
         [target_img.shape[0], target_img.shape[1]]
     ]) // res_factor
+
+    target_img_pil = target_img_pil.resize((resolution[1][1], resolution[1][0]))
+    target_img = torch.tensor(np.array(target_img_pil).mean(axis=2), dtype=torch.long)
+    target_density = gray_image_to_density(target_img).to(device)
 
     #
     # #
@@ -82,39 +93,34 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
 
         if step % (epochs // num_batch) == 0 and step < epochs:
             # Convert images to density map and random coordinates
-            # Source
-            source_coords = density_to_random_coords(
+            # Source coords
+            source_coords = density_to_coords(
                 density_map=source_density,
                 num_points=batch_size
             ).to(device).requires_grad_(True)
-
-            source_density = coords_to_density(
-                coords=source_coords,
-                n_ubins=resolution[0, 0],
-                n_vbins=resolution[0, 1]
-            )
             
-            # Target
-            target_coords = density_to_random_coords(
+            # Target coords
+            target_coords = density_to_coords(
                 density_map=target_density,
                 max_size=1,
                 num_points=batch_size
             ).to(device)
 
-            target_density = coords_to_density(
-                coords=target_coords,
-                n_ubins=resolution[1, 0],
-                n_vbins=resolution[1, 1]
-            )
+            # Reset LR
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr
 
         # Validation
         if gif > 0 and step % (epochs // gif) == 0:
+
             data = validate_surface(
                 mirror_model=mirror_model,
                 raytracer=raytracer,
                 source_img=source_img,
                 target_img=target_img,
                 step=step,
+                batch_size=batch_size,
+                res_factor=res_factor,
                 resolution=resolution,
                 device=device
             )
@@ -156,9 +162,9 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         )
         
         def closure():
-            alpha = 1
-            beta = 0.1
-            gamma = 0.1
+            alpha = 10
+            beta = 1
+            gamma = 1
 
             optimizer.zero_grad()
             physics_loss = beta * ma_loss + gamma * cv_loss
@@ -178,7 +184,8 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             loss.cpu().item(),
             transport_loss.cpu().item(),
             ma_loss.cpu().item(),
-            cv_loss.cpu().item()
+            cv_loss.cpu().item(),
+            scheduler.get_last_lr()[0]
         ))
 
         if torch.isnan(loss) or loss // losses[0][0] > 1e2:
@@ -191,11 +198,21 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             
         tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
             
-    print()
-    print(losses[0])
-    print(losses[-1])
-    print()
+    losses = torch.tensor(losses)
+    lmin = torch.tensor(1e-8).to(losses.device)
+    fl, ll = torch.max(losses[0], lmin), torch.max(losses[-1], lmin)
 
-    if gif > 0: gif_from_data(list_data, title=target, fps=5)
+    loss_report = (
+        f"{'Metric':<12}{'Start':>12}{'End':>12}{'Change':>12}\n"
+        f"{'Total':<12}{float(fl[0]):12.6f}{float(ll[0]):12.6f}{pct_change(fl[0], ll[0]):12.3f}%\n"
+        f"{'Transport':<12}{float(fl[1]):12.6f}{float(ll[1]):12.6f}{pct_change(fl[1], ll[1]):12.3f}%\n"
+        f"{'MA':<12}{float(fl[2]):12.6f}{float(ll[2]):12.6f}{pct_change(fl[2], ll[2]):12.3f}%\n"
+        f"{'CV':<12}{float(fl[3]):12.6f}{float(ll[3]):12.6f}{pct_change(fl[3], ll[3]):12.3f}%\n"
+    )
 
-    return mirror_model, raytracer, torch.tensor(losses)
+    print()
+    print(loss_report)
+
+    if gif > 0: gif_from_data(list_data, title=f"target_{target}", fps=5)
+
+    return mirror_model, raytracer, losses, loss_report
