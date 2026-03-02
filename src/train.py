@@ -3,12 +3,14 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image
 from geomloss import SamplesLoss
 from tqdm import tqdm
 
-from sources import coords_to_density, density_to_random_coords, \
+from sources import coords_to_density, density_to_coords, \
     gray_image_to_density, coords_beam, density_beam
 from validation import validate_surface
 from network import MirrorSurface
@@ -16,6 +18,11 @@ from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses
 from plot_results import gif_from_data
 
+
+def pct_change(a, b):
+    a_f = float(a)
+    b_f = float(b)
+    return (b_f - a_f) / a_f * 100.0 if a_f != 0 else float('nan')
 
 # --- TRAINING LOOP ---
 def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device, gif=0):
@@ -59,7 +66,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
 
     # Open image
     source_img = np.array(Image.open("src/templates/circle.png"))
-    source_img = torch.tensor(source_img)
+    source_img = torch.tensor(source_img, dtype=torch.long)
     source_density = gray_image_to_density(source_img).to(device)
 
     target_img_pil = Image.open(f"src/templates/{target}.png")
@@ -71,7 +78,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     ]) // res_factor
 
     target_img_pil = target_img_pil.resize((resolution[1][1], resolution[1][0]))
-    target_img = torch.tensor(np.array(target_img_pil).mean(axis=2))
+    target_img = torch.tensor(np.array(target_img_pil).mean(axis=2), dtype=torch.long)
     target_density = gray_image_to_density(target_img).to(device)
 
     #
@@ -86,31 +93,17 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         if step % (epochs // num_batch) == 0 and step < epochs:
             # Convert images to density map and random coordinates
             # Source coords
-            source_coords = density_to_random_coords(
+            source_coords = density_to_coords(
                 density_map=source_density,
                 num_points=batch_size
             ).to(device).requires_grad_(True)
-
-            # Source density
-            source_density = coords_to_density(
-                coords=source_coords,
-                n_ubins=resolution[0, 0],
-                n_vbins=resolution[0, 1]
-            )
             
             # Target coords
-            target_coords = density_to_random_coords(
+            target_coords = density_to_coords(
                 density_map=target_density,
                 max_size=1,
                 num_points=batch_size
             ).to(device)
-
-            # Target density
-            target_density = coords_to_density(
-                coords=target_coords,
-                n_ubins=resolution[1, 0],
-                n_vbins=resolution[1, 1]
-            )
 
             # Reset LR
             for param_group in optimizer.param_groups:
@@ -168,7 +161,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         )
         
         def closure():
-            alpha = 2
+            alpha = 10
             beta = 1
             gamma = 1
 
@@ -207,13 +200,18 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     losses = torch.tensor(losses)
     lmin = torch.tensor(1e-8).to(losses.device)
     fl, ll = torch.max(losses[0], lmin), torch.max(losses[-1], lmin)
+
+    loss_report = (
+        f"{'Metric':<12}{'Start':>12}{'End':>12}{'Change':>12}\n"
+        f"{'Total':<12}{float(fl[0]):12.6f}{float(ll[0]):12.6f}{pct_change(fl[0], ll[0]):12.3f}%\n"
+        f"{'Transport':<12}{float(fl[1]):12.6f}{float(ll[1]):12.6f}{pct_change(fl[1], ll[1]):12.3f}%\n"
+        f"{'MA':<12}{float(fl[2]):12.6f}{float(ll[2]):12.6f}{pct_change(fl[2], ll[2]):12.3f}%\n"
+        f"{'CV':<12}{float(fl[3]):12.6f}{float(ll[3]):12.6f}{pct_change(fl[3], ll[3]):12.3f}%\n"
+    )
+
     print()
-    print(f"Total     {fl[0]:.6f} -> {ll[0]:.6f} ({(ll[0] - fl[0]) / fl[0] * 100}%)")
-    print(f"Transport {fl[1]:.6f} -> {ll[1]:.6f} ({(ll[1] - fl[1]) / fl[1] * 100}%)")
-    print(f"MA        {fl[2]:.6f} -> {ll[2]:.6f} ({(ll[2] - fl[2]) / fl[2] * 100}%)")
-    print(f"CV        {fl[3]:.6f} -> {ll[3]:.6f} ({(ll[3] - fl[3]) / fl[3] * 100}%)")
-    print()
+    print(loss_report)
 
     if gif > 0: gif_from_data(list_data, title=f"target_{target}", fps=5)
 
-    return mirror_model, raytracer, losses
+    return mirror_model, raytracer, losses, loss_report
