@@ -47,13 +47,16 @@ This repository includes many projects and scripts. Main scripts are located in 
 ## Results ([See more](images/))
 
 ### Square
-![square](images/square.gif)
+![square](images/target_square.gif)
 
 ### Spiral
-![spiral](images/spiral.gif)
+![spiral](images/target_spiral.gif)
 
 ### Pi
-![pi](images/pi.gif)
+![pi](images/target_pi.gif)
+
+### Cards
+![cards](images/target_cards.gif)
 
 - - -
 
