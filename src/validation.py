@@ -1,16 +1,18 @@
 import os
 import torch
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from sources import gray_image_to_density, density_to_random_coords, coords_to_density
+from sources import gray_image_to_density, density_to_coords, coords_to_density
 from plot_results import plot_results
 
 def validate_surface(mirror_model, raytracer, source_img, target_img, \
     step, batch_size, res_factor, resolution, device):
 
     source_density = gray_image_to_density(source_img).to(device)
-    source_coords = density_to_random_coords(
+    source_coords = density_to_coords(
         density_map=source_density,
         num_points=20*1000
     ).to(device).requires_grad_(True)

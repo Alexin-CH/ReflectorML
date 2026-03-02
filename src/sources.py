@@ -38,7 +38,7 @@ def coords_to_density(coords, n_ubins=200, n_vbins=200, flip=True):
     else:
         return H
         
-def density_to_coords(density_map, d0, axis, max_size=1, num_points=1000, p=1):
+def density_to_coords(density_map, max_size=1, num_points=1000, p=1):
     # Normalize density
     density_normalized = density_map / density_map.sum()
     flat_density = density_normalized.flatten()

@@ -1,8 +1,12 @@
 import os
 import torch
 import numpy as np
+
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
 from PIL import Image
 from tqdm import tqdm
 
@@ -40,7 +44,7 @@ def gif_from_data(list_data, title="nn", fps=10):
         file = f"plots/{step}.png"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         plt.savefig(file, bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
-        plt.close()
+        plt.close('all')
 
         files.append(file)
     
