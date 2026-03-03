@@ -1,5 +1,6 @@
 import time
 import torch
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -25,7 +26,7 @@ if __name__ == "__main__":
             batch_size=2500,
             lr=1e-5,
             device=device,
-            gif=40
+            gif=40 # Validation batch size is 20k so it may delay training, 0 to disable
         )
 
         # Plot losses
