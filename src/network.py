@@ -4,6 +4,8 @@ import torch.nn.functional as F
 
 import numpy as np
 
+# https://arxiv.org/abs/2410.04716
+
 class SineLayer(nn.Module):
     def __init__(self, in_features, out_features, bias=True, w0=30):
         super().__init__()
