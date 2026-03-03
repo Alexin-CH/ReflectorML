@@ -38,9 +38,11 @@ Install the required dependencies:
 make
 ```
 
-## Usage
+## Description
 
-This repository includes many projects and scripts. Main scripts are located in the `src` directory.
+This project implements a hybrid method that aims to use both:
+- PyTorch raytracer (with automatic differentiation) with a transport loss
+- Physical loss based on the Monge-Ampere equation.
 
 - - -
 
@@ -57,6 +59,8 @@ This repository includes many projects and scripts. Main scripts are located in 
 
 ### Cards
 ![cards](images/target_cards.gif)
+
+[See more results](images/)
 
 - - -
 
