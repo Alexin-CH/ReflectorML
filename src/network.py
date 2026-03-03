@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
-# https://arxiv.org/abs/2410.04716
+# SIREN: https://arxiv.org/abs/2006.09661
 
 class SineLayer(nn.Module):
     def __init__(self, in_features, out_features, bias=True, w0=30):
@@ -16,6 +16,8 @@ class SineLayer(nn.Module):
         x = self.linear(input)
         return torch.sin(self.w0 * x)
 
+# FINER: https://arxiv.org/abs/2312.02434
+
 class FINERLayer(nn.Module):
     def __init__(self, in_features, out_features, bias=True, w0=30):
         super().__init__()
@@ -25,6 +27,8 @@ class FINERLayer(nn.Module):
     def forward(self, input):
         x = self.linear(input)
         return torch.sin(self.w0 * x * (1 + torch.abs(x)))
+
+# H-SIREN: https://arxiv.org/abs/2410.04716
 
 class HSineLayer(nn.Module):
     def __init__(self, in_features, out_features, bias=True, w0=30):
