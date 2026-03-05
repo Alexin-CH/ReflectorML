@@ -13,6 +13,12 @@ By embedding the governing equations - such as the Monge-Ampère equation - dire
 Unlike purely data-driven models, PINNs do not rely solely on labeled data but instead enforce optical constraints during training, improving solution accuracy for specific problem instances.
 This framework accelerates the inverse design process and provides a computationally efficient alternative to traditional numerical solvers.
 
+## Description
+
+This project implements a hybrid method that aims to use both:
+- PyTorch raytracer (with automatic differentiation) with a transport loss
+- Physical loss based on the Monge-Ampere equation.
+
 ## Getting Started
 
 ### Prerequisites
@@ -35,12 +41,6 @@ Install the required dependencies:
 ``` bash
 make
 ```
-
-## Description
-
-This project implements a hybrid method that aims to use both:
-- PyTorch raytracer (with automatic differentiation) with a transport loss
-- Physical loss based on the Monge-Ampere equation.
 
 - - -
 
