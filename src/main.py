@@ -4,7 +4,7 @@ import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.ticker import StrMethodFormatter, LogFormatterMathtext
+from matplotlib.ticker import LogFormatterMathtext
 
 from train import train_surface
 
@@ -17,7 +17,7 @@ print(f"Seed: {torch.seed()}")
 if __name__ == "__main__":
     
     t0 = time.time()
-    for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm"]:
+    for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm", "pig"]:
         trained_model, raytracer, losses, loss_report = train_surface(
             target=target,
             res_factor=2,
@@ -49,7 +49,7 @@ if __name__ == "__main__":
         ax2.plot(losses[:, -1])
         ax2.legend(["LR"])
         ax2.set_yscale('linear')
-        ax2.yaxis.set_major_formatter(LogFormatterMathtext()) # StrMethodFormatter('{x:.1e}'))
+        ax2.yaxis.set_major_formatter(LogFormatterMathtext())
         ax2.grid()
 
         ax3.axis('off')
