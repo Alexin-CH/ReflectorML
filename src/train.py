@@ -156,15 +156,14 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             model=mirror_model,
             source_coords=source_coords,
             source_density=source_density,
-            target_coords=target_coords,
             target_density=target_density,
             resolution=resolution
         )
         
         def closure():
-            alpha = 10
+            alpha = 1
             beta = 1
-            gamma = 1
+            gamma = 0
 
             optimizer.zero_grad()
             physics_loss = beta * ma_loss + gamma * cv_loss

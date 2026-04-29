@@ -6,6 +6,15 @@ Free-form reflector design is essential in optics for precisely shaping light di
 
 This problem is mathematically formulated as a non-linear Monge-Ampère equation ([Wikipedia](https://en.wikipedia.org/wiki/Monge%E2%80%93Amp%C3%A8re_equation)), which defines the mapping between a given light source and a prescribed target intensity.
 
+### Far-field (parallel-beam) Monge–Ampère equation
+
+$\det\big(D^2\varphi(x)\big)=\dfrac{f(x)}{g(\nabla\varphi(x))},\;x\in\Omega$
+
+- **$\varphi$ :** convex potential $\Omega \rightarrow \mathbb{R}$
+- **$D^2\varphi$ :** Hessian of $\varphi$
+- **$f$ :** source density on $\Omega$  
+- **$g$ :** target density at $y=\nabla\varphi(x)$
+
 However, traditional numerical solvers for this equation are computationally expensive and often struggle with convergence, particularly in complex boundary conditions.
 Developing efficient and robust methods to solve this problem is crucial for advancing high-performance optical designs in both scientific and industrial applications.
 
