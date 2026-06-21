@@ -14,7 +14,7 @@ from tqdm import tqdm
 from sources import coords_to_density, density_to_coords, \
     gray_image_to_density, coords_beam, density_beam
 from validation import validate_surface
-from network import MirrorSurface
+from network import MirrorSurface, ICNN
 from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses
 from plot_results import gif_from_data
@@ -35,13 +35,13 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     criterion = nn.MSELoss()
     zero = torch.tensor(0.).to(device)
 
-    mirror_model = MirrorSurface().to(device)
+    mirror_model = ICNN(2, [512, 256, 256]).to(device)
     raytracer = MirrorRayTracer(target_x=10).to(device)
 
-    optimizer = torch.optim.AdamW(
+    optimizer = torch.optim.SGD(
         params=mirror_model.parameters(),
         lr=lr,
-        weight_decay=1e-8
+        weight_decay=1e-8,
     )
 
     # Trying different scheduler
@@ -49,7 +49,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         optimizer=optimizer,
         mode="min",
         factor=0.1,
-        patience=5,
+        patience=8,
         min_lr=lr * 1e-5
     )
 
@@ -145,7 +145,12 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         
         # Forward Raytracing
         deformation = mirror_model(source_coords)
+        # print(source_coords) # NOSONAR
+        # print(deformation) # NOSONAR
+        if any(torch.isnan(deformation)): raise RuntimeError("NaN in model output")
+
         predicted_coords = raytracer(source_coords, deformation)
+
         
         # Transport Loss (Sinkhorn) - Gives global structure
         transport_loss = sinkhorn_loss(predicted_coords, target_coords)
@@ -163,10 +168,9 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         def closure():
             alpha = 1
             beta = 1
-            gamma = 0
 
             optimizer.zero_grad()
-            physics_loss = beta * ma_loss + gamma * cv_loss
+            physics_loss = beta * ma_loss
 
             total_loss = alpha * transport_loss +  physics_loss
             loss = criterion(total_loss, zero)
@@ -187,8 +191,11 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             scheduler.get_last_lr()[0]
         ))
 
-        if torch.isnan(loss) or loss // losses[0][0] > 1e2:
+        if step > epochs / 10 and loss // losses[0][0] > 1e2:
             raise RuntimeError("Unexpected loss evolution, exiting...")
+
+        if torch.isnan(loss):
+            raise RuntimeError("Loss is NaN, exiting...")
 
         # Save best model
         # if loss.item() < loss_min if 'loss_min' in locals() else np.inf:
