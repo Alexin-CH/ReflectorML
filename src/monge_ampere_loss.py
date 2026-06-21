@@ -38,11 +38,11 @@ def compute_ma_losses(model, source_coords, source_density, target_density, reso
 
     # Monge–Ampère residual
     ma_res = det_hessians * (g + eps) - (f + eps)
-    ma_loss = ma_res.abs().mean()
+    ma_loss = ma_res ** 2
 
     # Convexity penalty
     eigvals = torch.linalg.eigvalsh(hessians)
     cv_pen = torch.clamp(-eigvals, min=0.0)
     cv_loss = cv_pen.mean()
 
-    return ma_loss, cv_loss
+    return ma_loss.mean(), cv_loss
