@@ -14,7 +14,7 @@ from tqdm import tqdm
 from sources import coords_to_density, density_to_coords, \
     gray_image_to_density, coords_beam, density_beam
 from validation import validate_surface
-from network import MirrorSurface, ICNN
+from network import MirrorSurface
 from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses
 from plot_results import gif_from_data
@@ -39,7 +39,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     criterion = nn.MSELoss()
     zero = torch.tensor(0.).to(device)
 
-    mirror_model = ICNN(2, [512, 256, 256]).to(device)
+    mirror_model = MirrorSurface().to(device)
     raytracer = MirrorRayTracer(target_x=10).to(device)
 
     # Stage 1: Adam optimizer
