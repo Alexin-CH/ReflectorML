@@ -68,10 +68,14 @@ def density_to_coords(density_map, max_size=1, num_points=1000, p=1):
 
     return torch.column_stack((y_coords, -x_coords))
 
-def gray_image_to_density(gray_image):
+def gray_image_to_density(gray_image, normalize=True):
     if gray_image.max() > 1:
         gray_image = gray_image / 255.0
-    return  1 - gray_image
+    density = 1 - gray_image
+    if not normalize:
+        return density
+    else:
+        return density / density.sum()
 
 #
 # #
