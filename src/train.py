@@ -26,32 +26,32 @@ def pct_change(a, b):
     return (b_f - a_f) / a_f * 100.0 if a_f != 0 else float('nan')
 
 # --- TRAINING LOOP ---
-def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device, gif=0):
+def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device, gif=0,
+                  adam_fraction=0.7, lbfgs_lr=None, lbfgs_max_iter=5, lbfgs_history_size=5):
     # Setup
     epochs = int(epochs)
     gif = min(max(0, gif), epochs)
     num_batch = min(max(1, num_batch), epochs)
-    
+    switch_epoch = int(epochs * adam_fraction)
+    if lbfgs_lr is None:
+        lbfgs_lr = lr * 1e3
+
     criterion = nn.MSELoss()
     zero = torch.tensor(0.).to(device)
 
     mirror_model = MirrorSurface().to(device)
     raytracer = MirrorRayTracer(target_x=10).to(device)
 
+    # Stage 1: Adam optimizer
     optimizer = torch.optim.AdamW(
         params=mirror_model.parameters(),
         lr=lr,
         weight_decay=1e-8
     )
-
-    # Trying different scheduler
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer=optimizer,
-        mode="min",
-        factor=0.1,
-        patience=5,
-        min_lr=lr * 1e-5
+        optimizer=optimizer, mode="min", factor=0.1, patience=5, min_lr=lr * 1e-5
     )
+    stage = "Adam"
 
     # Loss Function (Optimal Transport)
     # "sinkhorn" is an approximate Wasserstein distance, fully differentiable
@@ -91,6 +91,17 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     tqdm_epochs = tqdm(range(epochs+1), desc="Training", dynamic_ncols=True)
     for step in tqdm_epochs:
 
+        # Switch from Adam to L-BFGS
+        if step == switch_epoch and stage == "Adam":
+            optimizer = torch.optim.LBFGS(
+                params=mirror_model.parameters(),
+                lr=lbfgs_lr,
+                max_iter=lbfgs_max_iter,
+                history_size=lbfgs_history_size,
+                line_search_fn="strong_wolfe"
+            )
+            stage = "L-BFGS"
+
         if step % (epochs // num_batch) == 0 and step < epochs:
             # Convert images to density map and random coordinates
             # Source coords
@@ -106,9 +117,10 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
                 num_points=batch_size
             ).to(device)
 
-            # Reset LR
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
+            # Reset LR for Adam
+            if stage == "Adam":
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
 
         # Validation
         if gif > 0 and step % (epochs // gif) == 0:
@@ -126,76 +138,78 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             )
             list_data.append(data)
 
-        # Plot figures
-        # import matplotlib.pyplot as plt
-        # plt.figure()
-        # plt.scatter(source_coords.detach().cpu()[:,0], source_coords.detach().cpu()[:,1])
-        # plt.axis('equal')
-        # plt.show()
-        # plt.figure()
-        # plt.imshow(source_density.cpu())
-        # plt.show()
-        # plt.figure()
-        # plt.scatter(target_coords.cpu()[:,0], target_coords.cpu()[:,1])
-        # plt.axis('equal')
-        # plt.show()
-        # plt.figure()
-        # plt.imshow(target_density.cpu())
-        # plt.show()
-        
-        # Forward Raytracing
-        deformation = mirror_model(source_coords)
-        predicted_coords = raytracer(source_coords, deformation)
-        
-        # Transport Loss (Sinkhorn) - Gives global structure
-        transport_loss = sinkhorn_loss(predicted_coords, target_coords)
+        alpha = 1
+        beta = 1
+        gamma = 0
 
-        # Monge-Ampère Loss (PDE) - Enforces local smoothness and density
-        # Also enforces strict convexity
-        ma_loss, cv_loss = compute_ma_losses(
-            model=mirror_model,
-            source_coords=source_coords,
-            source_density=source_density,
-            target_density=target_density,
-            resolution=resolution
-        )
-        
-        def closure():
-            alpha = 1
-            beta = 1
-            gamma = 0
+        if stage == "L-BFGS":
+            def closure(
+                optimizer=optimizer,
+                source_coords=source_coords,
+                target_coords=target_coords,
+                alpha=alpha,
+                beta=beta,
+                gamma=gamma
+            ):
+                optimizer.zero_grad()
 
+                deformation = mirror_model(source_coords)
+                predicted_coords = raytracer(source_coords, deformation)
+
+                transport_loss = sinkhorn_loss(predicted_coords, target_coords)
+
+                ma_loss, cv_loss = compute_ma_losses(
+                    model=mirror_model,
+                    source_coords=source_coords,
+                    source_density=source_density,
+                    target_density=target_density,
+                    resolution=resolution
+                )
+
+                physics_loss = beta * ma_loss + gamma * cv_loss
+                total_loss = alpha * transport_loss + physics_loss
+                loss = criterion(total_loss, zero)
+
+                loss.backward()
+                return loss
+
+            loss = optimizer.step(closure)
+        else:
             optimizer.zero_grad()
+
+            deformation = mirror_model(source_coords)
+            predicted_coords = raytracer(source_coords, deformation)
+
+            transport_loss = sinkhorn_loss(predicted_coords, target_coords)
+
+            ma_loss, cv_loss = compute_ma_losses(
+                model=mirror_model,
+                source_coords=source_coords,
+                source_density=source_density,
+                target_density=target_density,
+                resolution=resolution
+            )
+
             physics_loss = beta * ma_loss + gamma * cv_loss
-
-            total_loss = alpha * transport_loss +  physics_loss
+            total_loss = alpha * transport_loss + physics_loss
             loss = criterion(total_loss, zero)
-            
+
             loss.backward()
-            return loss
-
-        loss = closure()
-
-        optimizer.step()
-        scheduler.step(loss.item())
+            optimizer.step()
+            scheduler.step(loss.item())
 
         losses.append((
             loss.cpu().item(),
             transport_loss.cpu().item(),
             ma_loss.cpu().item(),
             cv_loss.cpu().item(),
-            scheduler.get_last_lr()[0]
+            optimizer.param_groups[0]['lr']
         ))
 
         if torch.isnan(loss) or loss // losses[0][0] > 1e2:
             raise RuntimeError("Unexpected loss evolution, exiting...")
 
-        # Save best model
-        # if loss.item() < loss_min if 'loss_min' in locals() else np.inf:
-        #     mirror_model.save_model(f"{target}_best_weights.pt")
-        #     loss_min = loss.item()
-            
-        tqdm_epochs.set_description(f"LR {scheduler.get_last_lr()[0]:.2e} - Loss = {loss.item():.6f}")
+        tqdm_epochs.set_description(f"[{stage}] LR {optimizer.param_groups[0]['lr']:.2e} - Loss = {loss.item():.6f}")
             
     losses = torch.tensor(losses)
     lmin = torch.tensor(1e-8).to(losses.device)

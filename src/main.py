@@ -17,11 +17,11 @@ print(f"Seed: {torch.seed()}")
 if __name__ == "__main__":
     
     t0 = time.time()
-    for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm", "pig"]:
+    for target in ["square", "spiral", "pi", "bat", "cards", "heart", "plus", "qm", "pig"]:
         trained_model, raytracer, losses, loss_report = train_surface(
             target=target,
             res_factor=2,
-            epochs=2e2,
+            epochs=2e1,
             num_batch=1,
             batch_size=2500,
             lr=1e-5,
@@ -60,6 +60,8 @@ if __name__ == "__main__":
 
         plt.savefig(f"target_{target}_loss.png", bbox_inches='tight', pad_inches=0.1, dpi=100, facecolor="white")
         plt.close('all')
+
+        break
 
     t_final = time.time() - t0
     t_h = t_final // 3600
