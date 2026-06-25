@@ -17,11 +17,11 @@ print(f"Seed: {torch.seed()}")
 if __name__ == "__main__":
     
     t0 = time.time()
-    for target in ["square", "spiral", "square", "bat", "cards", "heart", "plus", "qm", "pig"]:
+    for target in ["square", "spiral", "pi", "bat", "cards", "heart", "plus", "qm", "pig"]:
         trained_model, raytracer, losses, loss_report = train_surface(
             target=target,
-            res_factor=4,
-            epochs=200,
+            res_factor=2,
+            epochs=2e1,
             num_batch=1,
             batch_size=1500,
             lr=1e-3,
