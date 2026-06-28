@@ -183,7 +183,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         optimizer.zero_grad()
 
         deformation = mirror_model(source_coords)
-        predicted_coords = raytracer(source_coords, deformation)
+        predicted_coords = raytracer(source_coords, deformation, mirror_model)
 
         transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 
