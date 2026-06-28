@@ -63,9 +63,10 @@ class MirrorSurface(nn.Module):
         
         self.net = nn.Sequential(
             SineLayer(2, 512),
-            FINERLayer(512, 256),
-            nn.Linear(256, 64),
-            icnn.ICNN(64, 1, 1)
+            SineLayer(512, 256),
+            FINERLayer(256, 256),
+            nn.Linear(256, 1),
+            # icnn.ICNN(64, 1, 1)
         )
 
         # Initialize final layer to be very close to 0
@@ -73,8 +74,8 @@ class MirrorSurface(nn.Module):
         # This is very important to avoid divergence !
         with torch.no_grad():
             # self.net[-1].backbone.W_out.weight.normal_(0, 1e-8)
-            for param in self.net[-1].parameters():
-                nn.init.normal_(param, mean=0.0, std=1e-3)
+            limit = 1e-8
+            self.net[-1].weight.uniform_(-limit, limit)
 
     def forward(self, coords):        
         # Neural offset (The freeform deformation)

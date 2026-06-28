@@ -177,27 +177,29 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
                 loss.backward()
                 return loss
 
-            loss = optimizer.step(closure)
-        else:
-            optimizer.zero_grad()
+            optimizer.step(closure)
+        
+        # Calculate losses for logging
+        optimizer.zero_grad()
 
-            deformation = mirror_model(source_coords)
-            predicted_coords = raytracer(source_coords, deformation)
+        deformation = mirror_model(source_coords)
+        predicted_coords = raytracer(source_coords, deformation)
 
-            transport_loss = sinkhorn_loss(predicted_coords, target_coords)
+        transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 
-            ma_loss, cv_loss = compute_ma_losses(
-                model=mirror_model,
-                source_coords=source_coords,
-                source_density=source_density,
-                target_density=target_density,
-                resolution=resolution
-            )
+        ma_loss, cv_loss = compute_ma_losses(
+            model=mirror_model,
+            source_coords=source_coords,
+            source_density=source_density,
+            target_density=target_density,
+            resolution=resolution
+        )
 
-            physics_loss = beta * ma_loss + gamma * cv_loss
-            total_loss = alpha * transport_loss + physics_loss
-            loss = criterion(total_loss, zero)
+        physics_loss = beta * ma_loss + gamma * cv_loss
+        total_loss = alpha * transport_loss + physics_loss
+        loss = criterion(total_loss, zero)
 
+        if stage == "Adam":
             loss.backward()
             optimizer.step()
             scheduler.step(loss.item())

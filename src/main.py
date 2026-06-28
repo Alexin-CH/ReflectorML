@@ -21,10 +21,16 @@ if __name__ == "__main__":
         trained_model, raytracer, losses, loss_report = train_surface(
             target=target,
             res_factor=2,
+
             epochs=2e1,
             num_batch=1,
             batch_size=1500,
             lr=1e-4,
+
+            adam_fraction=0.0,
+            lbfgs_history_size=10,
+            lbfgs_max_iter=10,
+
             device=device,
             gif=40 # Validation batch size is 20k so it may delay training, 0 to disable
         )
