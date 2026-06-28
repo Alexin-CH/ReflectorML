@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-
 class SineLayer(nn.Module):
     def __init__(self, in_features, out_features, bias=True, w0=30):
         super().__init__()

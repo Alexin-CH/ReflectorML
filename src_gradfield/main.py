@@ -21,11 +21,11 @@ if __name__ == "__main__":
         trained_model, raytracer, losses, loss_report = train_surface(
             target=target,
             res_factor=2,
-            epochs=2e1,
-            lr=1e-4,
 
+            epochs=2e1,
             num_batch=1,
             batch_size=2500,
+            lr=1e-4,
 
             adam_fraction=0.1,
             lbfgs_history_size=10,
