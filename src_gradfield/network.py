@@ -41,8 +41,8 @@ class GradientFieldNetwork(nn.Module):
                     limit = np.sqrt(6 / layer.linear.weight.shape[1])
                 layer.linear.weight.uniform_(-limit, limit)
 
-            limit = 1e-4
-            self.net[-1].weight.normal_(-limit, limit)
+            limit = np.sqrt(6 / self.net[-1].weight.shape[1])
+            self.net[-1].weight.uniform_(-limit, limit)
 
     def forward(self, coords):
         # Returns 2D vector field v = ∇φ

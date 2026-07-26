@@ -17,6 +17,7 @@ from validation import validate_surface
 from network import GradientFieldNetwork
 from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses
+from integration import compute_potential
 from plot_results import gif_from_data
 
 
@@ -86,6 +87,31 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     target_img = torch.tensor(np.array(target_img_pil).mean(axis=2), dtype=torch.long)
     target_density = gray_image_to_density(target_img).to(device)
 
+    # Warmup: train network to output near-zero gradient field
+    warmup_opt = torch.optim.Adam(mirror_model.parameters(), lr=lr, weight_decay=0)
+    for _ in range(10000):
+        warmup_opt.zero_grad()
+        coords = (torch.rand(batch_size, 2, device=device) * 2 - 1).requires_grad_(True)
+        out = mirror_model(coords)
+        out_s = out.view(-1)  # [B]
+        grad_phi = torch.autograd.grad(
+            outputs=out_s.sum(),
+            inputs=coords,
+            create_graph=True
+        )[0]  # [B,2]
+        loss = out_s.abs().mean() + grad_phi.norm(dim=1).mean()
+        loss.backward()
+        warmup_opt.step()
+
+    # diagnostics
+    coords = (torch.rand(batch_size, 2, device=device) * 2 - 1).requires_grad_(True)
+    out = mirror_model(coords)
+    out_s = out.view(-1)
+    grad_phi = torch.autograd.grad(out_s.sum(), coords)[0]
+    print(f"Warmup done — mean |out| = {out_s.abs().mean().item():.6f}")
+    print(f"Warmup done — mean |∇out| = {grad_phi.norm(dim=1).mean().item():.6f}")
+
+
     #
     # #
     # # #
@@ -145,6 +171,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         alpha = 1
         beta = 1
         gamma = 1e-3
+        l = 1e-3
 
         if stage == "L-BFGS":
             def closure(
@@ -158,7 +185,8 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
                 optimizer.zero_grad()
 
                 deformation = mirror_model(source_coords)
-                predicted_coords = raytracer(source_coords, deformation, mirror_model)
+                phi = compute_potential(mirror_model, source_coords).clamp(-l, l)
+                predicted_coords = raytracer(source_coords, deformation, phi)
 
                 transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 
@@ -183,7 +211,8 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         optimizer.zero_grad()
 
         deformation = mirror_model(source_coords)
-        predicted_coords = raytracer(source_coords, deformation, mirror_model)
+        phi = compute_potential(mirror_model, source_coords).clamp(-l, l)
+        predicted_coords = raytracer(source_coords, deformation, phi)
 
         transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 

@@ -25,9 +25,9 @@ if __name__ == "__main__":
             epochs=2e1,
             num_batch=1,
             batch_size=2500,
-            lr=1e-4,
+            lr=1e-5,
 
-            adam_fraction=0.1,
+            adam_fraction=0.8,
             lbfgs_history_size=10,
             lbfgs_lr=10,
 
