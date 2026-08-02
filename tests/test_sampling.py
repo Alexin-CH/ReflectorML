@@ -9,7 +9,7 @@ try_cuda = True
 device = torch.device('cuda' if try_cuda and torch.cuda.is_available() else 'cpu')
 
 res_factor = 2
-batch_size = 2500
+N_data = 2500
 
 # === #
 
@@ -19,7 +19,7 @@ source_density = gray_image_to_density(source_img).to(device)
 
 source_coords = density_to_coords(
     density_map=source_density,
-    num_points=batch_size
+    num_points=N_data
 ).to(device).requires_grad_(True)
 
 # Source density
@@ -63,7 +63,7 @@ for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm"]:
     target_coords = density_to_coords(
         density_map=target_density,
         max_size=1,
-        num_points=batch_size
+        num_points=N_data
     ).to(device)
 
     # Target density
