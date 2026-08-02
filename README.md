@@ -55,6 +55,8 @@ make
 
 ## Results ([See more](images/))
 
+> After extensive tests, I presume that those results are mainly led by the transport loss rather than the MA loss.
+
 ### Square
 ![square](images/target_square.gif)
 
