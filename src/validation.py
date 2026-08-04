@@ -16,34 +16,35 @@ def validate_surface(mirror_model, raytracer, source_img, target_img, \
     source_coords = density_to_coords(
         density_map=source_density,
         num_points=20*1000
-    ).to(device).requires_grad_(True)
+    ).to(device)
 
-    predicted_coords = integrate_map(mirror_model, source_coords)
+    with torch.no_grad():
+        predicted_coords = integrate_map(mirror_model, source_coords)
 
-    x = torch.linspace(-1.2, 1.2, 100).to(device)
-    y = torch.linspace(-1.2, 1.2, 100).to(device)
-    grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
+        x = torch.linspace(-1.2, 1.2, 100).to(device)
+        y = torch.linspace(-1.2, 1.2, 100).to(device)
+        grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
 
-    # Flatten grid for model input
-    grid_coords = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
+        # Flatten grid for model input
+        grid_coords = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
 
-    # Jacobian field over the grid: det J measures local area change
-    grid_deformation = torch.linalg.det(mirror_model(grid_coords))
+        # Jacobian field over the grid: det J measures local area change
+        grid_deformation = torch.linalg.det(mirror_model(grid_coords))
 
-    # Reshape back to grid for plotting/analysis
-    surface_mesh = torch.flip(grid_deformation.view(100, 100).T, dims=[0, 1])
+        # Reshape back to grid for plotting/analysis
+        surface_mesh = torch.flip(grid_deformation.view(100, 100).T, dims=[0, 1])
 
-    source_density = coords_to_density(
-        coords=source_coords,
-        n_ubins=resolution[0, 0],
-        n_vbins=resolution[0, 1]
-    )
-    predicted_density = coords_to_density(
-        coords=predicted_coords,
-        n_ubins=resolution[1, 0],
-        n_vbins=resolution[1, 1],
-        flip=False
-    )
+        source_density = coords_to_density(
+            coords=source_coords,
+            n_ubins=resolution[0, 0],
+            n_vbins=resolution[0, 1]
+        )
+        predicted_density = coords_to_density(
+            coords=predicted_coords,
+            n_ubins=resolution[1, 0],
+            n_vbins=resolution[1, 1],
+            flip=False
+        )
 
     data = (
         target_img.detach().cpu(),

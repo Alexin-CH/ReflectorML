@@ -36,7 +36,7 @@ def density_at_coords(density, coords, max_size=1):
     return sampled.view(-1)
 
 
-def integrate_map(model, coords, n_pts=51, chunk_size=2500):
+def integrate_map(model, coords, n_pts=51, chunk_size=500):
     """Recover T from its Jacobian field by Simpson line integration.
 
     T(x) = int_0^1 J_T(s x) x ds, with the straight path s -> s x from the
@@ -54,15 +54,21 @@ def integrate_map(model, coords, n_pts=51, chunk_size=2500):
     weights[1:-1:2] = 4.0
     weights[2:-1:2] = 2.0
 
-    # x in (N,2). We must keep this differentiable w.r.t. model params.
-    scaled = s[:, None, None] * coords[None, :, :]           # (n_pts, N, 2)
-    J = model(scaled.reshape(-1, 2)).reshape(n_pts, N, 2, 2)  # (n_pts,N,2,2)
+    # Evaluate J along the straight paths in chunks to bound GPU memory:
+    # scaled has shape (n_pts, chunk, 2), feeding n_pts*chunk rows at a time.
+    results = []
+    for i in range(0, N, chunk_size):
+        chunk = coords[i:i + chunk_size]
+        M = chunk.shape[0]
+        scaled = s[:, None, None] * chunk[None, :, :]         # (n_pts, M, 2)
+        J = model(scaled.reshape(-1, 2)).reshape(n_pts, M, 2, 2)  # (n_pts,M,2,2)
 
-    # J(s x) @ x  -> (n_pts, N, 2)
-    integrand = torch.einsum('sNij,Nj->sNi', J, coords)
-    T = h / 3.0 * torch.sum(weights[:, None, None] * integrand, dim=0)
+        # J(s x) @ x  -> (n_pts, M, 2)
+        integrand = torch.einsum('sMij,Mj->sMi', J, chunk)
+        T = h / 3.0 * torch.sum(weights[:, None, None] * integrand, dim=0)
+        results.append(T)
 
-    return T
+    return torch.cat(results, dim=0)
 
 
 def compute_ma_losses(model, source_coords, source_density, target_density, eps=1e-8):
