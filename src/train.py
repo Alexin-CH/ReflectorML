@@ -12,11 +12,11 @@ from geomloss import SamplesLoss
 from tqdm import tqdm
 
 from sources import coords_to_density, density_to_coords, \
-    gray_image_to_density, coords_beam, density_beam
+    gray_image_to_density, coords_beam, density_beam, reflect_frame
 from validation import validate_surface
 from network import MirrorSurface
 from raytracer import MirrorRayTracer
-from monge_ampere_loss import compute_ma_losses
+from monge_ampere_loss import compute_ma_losses, integrate_map
 from plot_results import gif_from_data
 
 
@@ -70,11 +70,11 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
     list_data = []
 
     # Open image
-    source_img = np.array(Image.open("src/templates/circle.png"))
+    source_img = np.array(Image.open("templates/circle.png"))
     source_img = torch.tensor(source_img, dtype=torch.long)
     source_density = gray_image_to_density(source_img).to(device)
 
-    target_img_pil = Image.open(f"src/templates/{target}.png")
+    target_img_pil = Image.open(f"templates/{target}.png")
     target_img = np.array(target_img_pil).mean(axis=2)
 
     resolution = np.array([
@@ -114,12 +114,12 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
                 num_points=batch_size
             ).to(device).requires_grad_(True)
             
-            # Target coords
-            target_coords = density_to_coords(
+            # Target coords (reflected frame, matching the learned map)
+            target_coords = reflect_frame(density_to_coords(
                 density_map=target_density,
                 max_size=1,
                 num_points=batch_size
-            ).to(device)
+            )).to(device)
 
             # Reset LR for Adam
             if stage == "Adam":
@@ -157,8 +157,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             ):
                 optimizer.zero_grad()
 
-                deformation = mirror_model(source_coords)
-                predicted_coords = raytracer(source_coords, deformation)
+                predicted_coords = integrate_map(mirror_model, source_coords)
 
                 transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 
@@ -166,8 +165,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
                     model=mirror_model,
                     source_coords=source_coords,
                     source_density=source_density,
-                    target_density=target_density,
-                    resolution=resolution
+                    target_density=target_density
                 )
 
                 physics_loss = beta * ma_loss + gamma * cv_loss
@@ -182,8 +180,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
         # Calculate losses for logging
         optimizer.zero_grad()
 
-        deformation = mirror_model(source_coords)
-        predicted_coords = raytracer(source_coords, deformation)
+        predicted_coords = integrate_map(mirror_model, source_coords)
 
         transport_loss = sinkhorn_loss(predicted_coords, target_coords)
 
@@ -191,8 +188,7 @@ def train_surface(target, res_factor, epochs, batch_size, num_batch, lr, device,
             model=mirror_model,
             source_coords=source_coords,
             source_density=source_density,
-            target_density=target_density,
-            resolution=resolution
+            target_density=target_density
         )
 
         physics_loss = beta * ma_loss + gamma * cv_loss

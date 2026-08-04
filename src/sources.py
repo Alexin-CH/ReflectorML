@@ -1,5 +1,40 @@
 import torch
 
+def reflect_frame(coords):
+    """Express 2D coords in the reflected (orientation-preserving) target frame.
+
+    The base 45deg mirror maps (x, z) -> (y_target ~ -x, z), which reverses
+    orientation (det = -1). Flipping the vertical (first) axis makes the map
+    orientation-preserving, matching the reflected-frame Monge-Ampere loss.
+    Applying the same flip to both predicted and target point clouds is an
+    isometry, so sinkhorn distances are unchanged.
+    """
+    return torch.cat([-coords[:, 0:1], coords[:, 1:2]], dim=1)
+
+def density_to_normalization_params(density_map):
+    """Pixel-space centering and scaling matching density_to_coords.
+
+    density_to_coords centers the sampled pixels and rescales so the larger
+    axis spans [-max_size, max_size]. This returns the deterministic version of
+    that map, derived from the support bounding box:
+    (row_center, col_center, max_coord) in pixel units.
+    """
+    support = density_map > 0
+    rows = torch.nonzero(support.any(dim=1), as_tuple=False).squeeze(1)
+    cols = torch.nonzero(support.any(dim=0), as_tuple=False).squeeze(1)
+
+    if rows.numel() == 0 or cols.numel() == 0:
+        z = torch.tensor(0.0, device=density_map.device)
+        o = torch.tensor(1.0, device=density_map.device)
+        return z, z, o
+
+    row_center = (rows[0] + rows[-1]) / 2
+    col_center = (cols[0] + cols[-1]) / 2
+    half_row = (rows[-1] - rows[0]) / 2
+    half_col = (cols[-1] - cols[0]) / 2
+    max_coord = torch.maximum(half_row, half_col)
+    return row_center, col_center, max_coord
+
 def coords_to_edges(coords, n_ubins=200, n_vbins=200):
     u_coords = coords[:, 1].clone()
     v_coords = coords[:, 0].clone()

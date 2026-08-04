@@ -58,6 +58,16 @@ class HSineLayer(nn.Module):
 #
 
 class MirrorSurface(nn.Module):
+    """Learn the transport map's Jacobian field J_T directly (differential MA).
+
+    forward(x) returns the (N, 2, 2) Jacobian of the transport map T at each
+    point x, measured in the reflected (orientation-preserving) frame. The map
+    itself is recovered by integrating this field along the ray from the origin,
+    T(x) = int_0^1 J_T(s x) x ds, assuming T(0) = 0 in the source frame.
+
+    We initialize the output to the identity Jacobian (det = +1) so the map is
+    orientation-preserving and starts near T(x) = x, i.e. a planar-ish start.
+    """
     def __init__(self):
         super().__init__()
         
@@ -65,22 +75,20 @@ class MirrorSurface(nn.Module):
             SineLayer(2, 512),
             SineLayer(512, 256),
             FINERLayer(256, 256),
-            nn.Linear(256, 1),
-            # icnn.ICNN(64, 1, 1)
+            nn.Linear(256, 4),  # flattened (2, 2) Jacobian
         )
 
-        # Initialize final layer to be very close to 0
-        # This ensures we start with an almost perfect 45-degree planar mirror
-        # This is very important to avoid divergence !
+        # Init to the identity Jacobian: J = [[1,0],[0,1]] -> det = +1, T ~ x.
         with torch.no_grad():
-            # self.net[-1].backbone.W_out.weight.normal_(0, 1e-8)
-            limit = 1e-8
-            self.net[-1].weight.uniform_(-limit, limit)
+            self.net[-1].weight.zero_()
+            b = self.net[-1].bias
+            b.zero_()
+            b[0] = 1.0   # first row  (1, 0)
+            b[3] = 1.0   # second row (0, 1)
 
-    def forward(self, coords):        
-        # Neural offset (The freeform deformation)
-        deformation = self.net(coords)
-        return deformation
+    def forward(self, coords):
+        out = self.net(coords)
+        return out.view(-1, 2, 2)
 
     def save_model(self, filepath):
         torch.save(self.state_dict(), filepath)

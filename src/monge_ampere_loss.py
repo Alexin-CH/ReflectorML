@@ -1,48 +1,116 @@
 import torch
-from torch.func import hessian, vmap, jacrev  # jacrev gives per-sample gradient (∇φ)
-import matplotlib
-matplotlib.use('Agg')
+import torch.nn.functional as F
+from torch.func import vmap
 
-from sources import coords_to_density_indices
+from sources import density_to_normalization_params
 
-def compute_ma_losses(model, source_coords, source_density, target_density, resolution, eps=1e-8):
-    # Compute per-sample Hessians of scalar potential
-    single_hess = lambda x: hessian(model)(x)
-    hessians = vmap(single_hess)(source_coords)
-    hessians = hessians.squeeze(dim=1)
 
-    # Determinant (using stable log-det)
-    sign, logabsdet = torch.linalg.slogdet(hessians)
-    det_hessians = sign * torch.exp(logabsdet.clamp(min=torch.log(torch.tensor(eps).to(logabsdet.device))))
+def density_at_coords(density, coords, max_size=1):
+    """Bilinearly interpolate a (normalized) density at normalized coords.
 
-    # Map source points via gradient and sample g at mapped coords
-    grad_fn = jacrev(model)
-    grads = vmap(grad_fn)(source_coords)
+    The pixel <-> normalized affine map matches density_to_coords
+    (support-bounding-box centering and scaling), so the interpolation lives in
+    the same coordinate space as the sampled coords. Differentiable w.r.t. the
+    mapped coords, unlike a hard histogram bin lookup.
+    """
+    H, W = density.shape
+    row_center, col_center, max_coord = density_to_normalization_params(density)
+    scale = max_size / max_coord
 
-    # Convert coords to target density indices using mapped grads
-    sources_indices = coords_to_density_indices(
-        coords=source_coords,
-        n_ubins=resolution[0, 0],
-        n_vbins=resolution[0, 1]
+    # Inverse of pixels_to_coords: coords[:,0] = norm_col, coords[:,1] = -norm_row
+    col_pix = coords[:, 0] / scale + col_center
+    row_pix = -coords[:, 1] / scale + row_center
+
+    # grid_sample grid coords with align_corners=True (pixel centers at +-1)
+    g_col = 2 * col_pix / (W - 1) - 1
+    g_row = 2 * row_pix / (H - 1) - 1
+    grid = torch.stack([g_col, g_row], dim=1).view(1, 1, -1, 2)
+
+    sampled = F.grid_sample(
+        density.float().unsqueeze(0).unsqueeze(0),
+        grid,
+        mode='bilinear',
+        padding_mode='zeros',
+        align_corners=True
     )
+    return sampled.view(-1)
 
-    grad_target_indices = coords_to_density_indices(
-        coords=grads.squeeze(1),
-        n_ubins=resolution[1, 0],
-        n_vbins=resolution[1, 1]
-    )
 
-    # Fetch densities
-    f = source_density[sources_indices[:, 0].tolist(), sources_indices[:, 1].tolist()]
-    g = target_density[grad_target_indices[:, 0].tolist(), grad_target_indices[:, 1].tolist()]
+def integrate_map(model, coords, n_pts=51, chunk_size=2500):
+    """Recover T from its Jacobian field by Simpson line integration.
 
-    # Monge–Ampère residual
-    ma_res = det_hessians * (g + eps) - (f + eps)
-    ma_loss = ma_res ** 2
+    T(x) = int_0^1 J_T(s x) x ds, with the straight path s -> s x from the
+    origin (T(0) = 0 in the source frame). Differentiable w.r.t. model params.
+    Returns (N, 2) transport map in the same (reflected) frame as J_T.
+    """
+    if n_pts % 2 == 0:
+        n_pts += 1
+    device = coords.device
+    N = coords.shape[0]
+    s = torch.linspace(0, 1, n_pts, device=device)
 
-    # Convexity penalty
-    eigvals = torch.linalg.eigvalsh(hessians)
-    cv_pen = torch.clamp(-eigvals, min=0.0)
-    cv_loss = cv_pen.mean()
+    h = 1.0 / (n_pts - 1)
+    weights = torch.ones(n_pts, device=device)
+    weights[1:-1:2] = 4.0
+    weights[2:-1:2] = 2.0
 
-    return ma_loss.mean(), cv_loss
+    # x in (N,2). We must keep this differentiable w.r.t. model params.
+    scaled = s[:, None, None] * coords[None, :, :]           # (n_pts, N, 2)
+    J = model(scaled.reshape(-1, 2)).reshape(n_pts, N, 2, 2)  # (n_pts,N,2,2)
+
+    # J(s x) @ x  -> (n_pts, N, 2)
+    integrand = torch.einsum('sNij,Nj->sNi', J, coords)
+    T = h / 3.0 * torch.sum(weights[:, None, None] * integrand, dim=0)
+
+    return T
+
+
+def compute_ma_losses(model, source_coords, source_density, target_density, eps=1e-8):
+    # Densities as probability measures (int f = int g = 1)
+    f_norm = source_density / source_density.sum()
+
+    # Target measured in the reflected (orientation-preserving) frame, matching
+    # MOKA. The base 45deg plane maps (x,z) -> (y_target ~ -x, z) with det = -1;
+    # flipping the target's vertical axis turns it into an orientation-preserving
+    # map, so det >= 0 and the Monge-Ampere equation holds WITHOUT an absorbing
+    # absolute value. The target density is mirrored consistently: coords[:,0]
+    # is the column axis (pixels_to_coords flips rows, and density_at_coords maps
+    # coords[:,0]->col idx), so a negation of the first output axis corresponds
+    # to a column flip (dims=[1]).
+    g_norm = torch.flip(target_density / target_density.sum(), dims=[1])
+
+    # Differential MA: the network outputs J_T(x) directly (reflected frame).
+    jacobians = model(source_coords)  # (N, 2, 2)
+
+    # Stable log-determinant (positive near identity in the reflected frame)
+    logabsdet, _ = torch.linalg.slogdet(jacobians)
+    dets = torch.linalg.det(jacobians)
+
+    # Recover the map by integration and sample g at the mapped coords
+    mapped = integrate_map(model, source_coords)
+    g = density_at_coords(g_norm, mapped)
+
+    # Only enforce where the mapped density lands inside the target density
+    support_mask = g > eps
+
+    # Jacobian of the pixel -> normalized map: |det| = (max_size/max_coord)^2.
+    # Both spaces use max_size=1, so |det A_t|/|det A_s| = (max_coord_s/max_coord_t)^2
+    # must be folded into the residual for the equation to hold in normalized coords.
+    _, _, max_coord_s = density_to_normalization_params(source_density)
+    _, _, max_coord_t = density_to_normalization_params(target_density)
+
+    log_f = torch.log(density_at_coords(f_norm, source_coords) + eps)
+    log_g = torch.log(g + eps)
+    log_ma_res = logabsdet - (log_f - log_g) \
+        - 2 * (torch.log(max_coord_s) - torch.log(max_coord_t))
+
+    # Degenerate maps (det <= 0) are non-physical (local folds): exclude them
+    # from the log-residual, they are penalized by the CV term below instead.
+    valid = support_mask & (dets > 0)
+
+    ma_loss = ((log_ma_res ** 2) * valid).sum() / valid.sum().clamp(min=1)
+
+    # Enforce det J_T -> +1 in the reflected frame (fold-avoidance).
+    cv_loss = torch.clamp(1.0 - dets, min=0.0).mean()
+
+    return ma_loss, cv_loss
