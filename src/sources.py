@@ -47,10 +47,31 @@ def coords_to_edges(coords, n_ubins=200, n_vbins=200):
     v_edges = torch.linspace(v_min, v_max, n_vbins).to(coords.device)
     return u_edges, v_edges
 
-def coords_to_density_indices(coords, n_ubins=200, n_vbins=200):
+def pixels_to_coords(x_pix, y_pix, max_size=1):
+    """Map pixel coordinates to the normalized plane used by density_to_coords.
+
+    x_pix, y_pix: float tensors of pixel positions (any jitter included).
+    Returns column_stack((y, -x)) so the convention matches density_to_coords.
+    """
+    x = x_pix - (x_pix.max() + x_pix.min()) / 2
+    y = y_pix - (y_pix.max() + y_pix.min()) / 2
+
+    max_coord = torch.max(x.max(), y.max())
+    if max_coord > 0:
+        x = x * max_size / max_coord
+        y = y * max_size / max_coord
+
+    return torch.column_stack((y, -x))
+
+def coords_to_density_indices(coords, n_ubins=200, n_vbins=200, coord_range=None):
     u_coords = coords[:, 1].clone()
     v_coords = coords[:, 0].clone()
-    u_edges, v_edges = coords_to_edges(coords, n_ubins, n_vbins)
+    if coord_range is None:
+        u_edges, v_edges = coords_to_edges(coords, n_ubins, n_vbins)
+    else:
+        u_min, u_max, v_min, v_max = coord_range
+        u_edges = torch.linspace(u_min, u_max, n_ubins).to(coords.device)
+        v_edges = torch.linspace(v_min, v_max, n_vbins).to(coords.device)
     
     # Find bin indices using torch.bucketize
     u_indices = torch.bucketize(u_coords, u_edges)
@@ -62,8 +83,8 @@ def coords_to_density_indices(coords, n_ubins=200, n_vbins=200):
     
     return torch.stack([u_indices[valid_mask], v_indices[valid_mask]], dim=1)
 
-def coords_to_density(coords, n_ubins=200, n_vbins=200, flip=True):
-    indices = coords_to_density_indices(coords, n_ubins, n_vbins)
+def coords_to_density(coords, n_ubins=200, n_vbins=200, flip=True, coord_range=None):
+    indices = coords_to_density_indices(coords, n_ubins, n_vbins, coord_range)
 
     H = torch.zeros(n_ubins, n_vbins, dtype=torch.long, device=coords.device)
     for u, v in indices:
@@ -92,16 +113,46 @@ def density_to_coords(density_map, max_size=1, num_points=1000, p=1):
     x_coords = x_indices + torch.rand(num_points).to(density_map.device)
     y_coords = y_indices + torch.rand(num_points).to(density_map.device)
     
-    # Center
-    x_coords = x_coords - (x_coords.max() + x_coords.min()) / 2
-    y_coords = y_coords - (y_coords.max() + y_coords.min()) / 2
+    return pixels_to_coords(x_coords, y_coords, max_size)
 
-    # Resize
-    max_coord = torch.max(x_coords.max(), y_coords.max())
-    x_coords = x_coords * max_size / max_coord
-    y_coords = y_coords * max_size / max_coord
+def density_contour_indices(density_map):
+    """Pixel (row, col) indices on the contour of a (binary) density map.
 
-    return torch.column_stack((y_coords, -x_coords))
+    A pixel is on the contour if it lies inside the shape and has at least
+    one outside 8-neighbor.
+    """
+    inside = density_map > 0.5 * density_map.max()
+    h, w = inside.shape
+    padded = torch.zeros(h + 2, w + 2, dtype=torch.bool, device=density_map.device)
+    padded[1:-1, 1:-1] = inside
+
+    outside_neighbor = torch.zeros_like(inside)
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            if di == 0 and dj == 0:
+                continue
+            outside_neighbor |= ~padded[1 + di:1 + di + h, 1 + dj:1 + dj + w]
+
+    contour = inside & outside_neighbor
+    return contour.nonzero()
+
+def density_contour_coords(density_map, max_size=1, num_points=None):
+    """Normalized coordinates of points sampled along the domain contour.
+
+    Uses the same centering/scaling as density_to_coords so contour points
+    live in the same plane as interior points.
+    """
+    indices = density_contour_indices(density_map)
+    if indices.shape[0] == 0:
+        return torch.zeros(0, 2, device=density_map.device)
+
+    if num_points is not None and indices.shape[0] > num_points:
+        indices = indices[torch.randperm(indices.shape[0])[:num_points]]
+
+    # Pixel centers (uniform spacing along the 8-connected contour)
+    x_pix = indices[:, 0].float() + 0.5
+    y_pix = indices[:, 1].float() + 0.5
+    return pixels_to_coords(x_pix, y_pix, max_size)
 
 def gray_image_to_density(gray_image, normalize=True):
     if gray_image.max() > 1:
