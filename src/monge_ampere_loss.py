@@ -2,10 +2,10 @@ import torch
 import torch.nn.functional as F
 from torch.func import vmap
 
-from sources import density_to_normalization_params
+from sources import density_to_normalization_params, gaussian_blur
 
 
-def density_at_coords(density, coords, max_size=1):
+def density_at_coords(density, coords, max_size=1, norm_params=None):
     """Bilinearly interpolate a (normalized) density at normalized coords.
 
     The pixel <-> normalized affine map matches density_to_coords
@@ -14,7 +14,10 @@ def density_at_coords(density, coords, max_size=1):
     mapped coords, unlike a hard histogram bin lookup.
     """
     H, W = density.shape
-    row_center, col_center, max_coord = density_to_normalization_params(density)
+    if norm_params is None:
+        row_center, col_center, max_coord = density_to_normalization_params(density)
+    else:
+        row_center, col_center, max_coord = norm_params
     scale = max_size / max_coord
 
     # Inverse of pixels_to_coords: coords[:,0] = norm_col, coords[:,1] = -norm_row
@@ -71,9 +74,21 @@ def integrate_map(model, coords, n_pts=51, chunk_size=500):
     return torch.cat(results, dim=0)
 
 
-def compute_ma_losses(model, source_coords, source_density, target_density, eps=1e-8):
+def compute_ma_losses(model, source_coords, source_density, target_density,
+                      blur_sigma=0.0, eps=1e-8):
+    # Support-bounding-box normalization must come from the TRUE (unblurred)
+    # densities: blurring dilates the support and would corrupt the
+    # pixel <-> normalized coordinate mapping. Only the VALUES are smoothed.
+    norm_s = density_to_normalization_params(source_density)
+    norm_t = density_to_normalization_params(target_density)
+
+    # Smooth the densities so f/g is smooth (well-conditioned MA). With
+    # blur_sigma=0 the densities are passed through unchanged.
+    source_smooth = gaussian_blur(source_density, blur_sigma)
+    target_smooth = gaussian_blur(target_density, blur_sigma)
+
     # Densities as probability measures (int f = int g = 1)
-    f_norm = source_density / source_density.sum()
+    f_norm = source_smooth / source_smooth.sum()
 
     # Target measured in the reflected (orientation-preserving) frame, matching
     # MOKA. The base 45deg plane maps (x,z) -> (y_target ~ -x, z) with det = -1;
@@ -83,7 +98,7 @@ def compute_ma_losses(model, source_coords, source_density, target_density, eps=
     # is the column axis (pixels_to_coords flips rows, and density_at_coords maps
     # coords[:,0]->col idx), so a negation of the first output axis corresponds
     # to a column flip (dims=[1]).
-    g_norm = torch.flip(target_density / target_density.sum(), dims=[1])
+    g_norm = torch.flip(target_smooth / target_smooth.sum(), dims=[1])
 
     # Differential MA: the network outputs J_T(x) directly (reflected frame).
     jacobians = model(source_coords)  # (N, 2, 2)
@@ -94,7 +109,7 @@ def compute_ma_losses(model, source_coords, source_density, target_density, eps=
 
     # Recover the map by integration and sample g at the mapped coords
     mapped = integrate_map(model, source_coords)
-    g = density_at_coords(g_norm, mapped)
+    g = density_at_coords(g_norm, mapped, norm_params=norm_t)
 
     # Only enforce where the mapped density lands inside the target density
     support_mask = g > eps
@@ -102,10 +117,10 @@ def compute_ma_losses(model, source_coords, source_density, target_density, eps=
     # Jacobian of the pixel -> normalized map: |det| = (max_size/max_coord)^2.
     # Both spaces use max_size=1, so |det A_t|/|det A_s| = (max_coord_s/max_coord_t)^2
     # must be folded into the residual for the equation to hold in normalized coords.
-    _, _, max_coord_s = density_to_normalization_params(source_density)
-    _, _, max_coord_t = density_to_normalization_params(target_density)
+    _, _, max_coord_s = norm_s
+    _, _, max_coord_t = norm_t
 
-    log_f = torch.log(density_at_coords(f_norm, source_coords) + eps)
+    log_f = torch.log(density_at_coords(f_norm, source_coords, norm_params=norm_s) + eps)
     log_g = torch.log(g + eps)
     log_ma_res = logabsdet - (log_f - log_g) \
         - 2 * (torch.log(max_coord_s) - torch.log(max_coord_t))

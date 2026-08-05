@@ -16,7 +16,7 @@ from network import MirrorSurface
 from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses, integrate_map
 from plot_results import gif_from_data
-from annealing import anneal_weights
+from annealing import anneal_weights, anneal_blur_sigma
 
 
 def pct_change(a, b):
@@ -29,7 +29,7 @@ def pct_change(a, b):
 def train_surface(target, epochs, N, lr, device, loss_weights,
                   adam_fraction, lbfgs_lr, lbfgs_max_iter, lbfgs_history_size,
                   gif=0, anneal=False, anneal_alpha=0.9,
-                  anneal_freq=5):
+                  anneal_freq=5, blur_sigma=0.0, blur_final=0.0):
     # Setup
     epochs = int(epochs)
     gif = min(max(0, gif), epochs)
@@ -118,6 +118,10 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
     tqdm_epochs = tqdm(range(epochs+1), desc="Training", dynamic_ncols=True)
     for step in tqdm_epochs:
 
+        # Blur width anneals toward blur_final: early steps see smooth f/g
+        # (well-conditioned MA), the true sharp densities recovered at the end.
+        sigma = anneal_blur_sigma(step, epochs, blur_sigma)
+
         # Switch from Adam to L-BFGS
         if step == switch_epoch and stage == "Adam":
             optimizer = torch.optim.LBFGS(
@@ -157,6 +161,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
                 target_coords=target_coords,
                 source_contour_coords=source_contour_coords,
                 target_contour_coords=target_contour_coords,
+                sigma=sigma,
                 loss_weights=loss_weights
             ):
                 # Unpack loss weights: loss_weights = [w_ma, w_bc, w_cv, w_data]
@@ -170,7 +175,8 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
                     model=mirror_model,
                     source_coords=source_coords_ma,
                     source_density=source_density,
-                    target_density=target_density
+                    target_density=target_density,
+                    blur_sigma=sigma
                 )
 
                 bc_predicted = integrate_map(mirror_model, source_contour_coords)
@@ -194,7 +200,8 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
             model=mirror_model,
             source_coords=source_coords_ma,
             source_density=source_density,
-            target_density=target_density
+            target_density=target_density,
+            blur_sigma=sigma
         )
 
         bc_predicted = integrate_map(mirror_model, source_contour_coords)

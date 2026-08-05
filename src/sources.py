@@ -1,4 +1,38 @@
 import torch
+import torch.nn.functional as F
+
+
+def gaussian_blur(density, sigma, kernel_size=None):
+    """Gaussian-blur a density map (same shape, renormalized to sum 1).
+
+    sigma in pixels; sigma <= 0 returns the density unchanged. Used to smooth
+    piecewise-constant source/target densities so f/g is smooth and the
+    Monge-Ampere data is well-conditioned (see anneal_blur in train.py).
+    """
+    if sigma <= 0:
+        return density
+
+    if kernel_size is None:
+        kernel_size = int(6 * sigma) + 1
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+    r = kernel_size // 2
+    t = torch.linspace(-r, r, kernel_size, device=density.device, dtype=density.dtype)
+    g1 = torch.exp(-(t ** 2) / (2 * sigma ** 2))
+    g1 = g1 / g1.sum()
+    kernel = torch.outer(g1, g1).view(1, 1, kernel_size, kernel_size)
+
+    blurred = F.conv2d(
+        density[None, None],
+        kernel,
+        padding=r
+    ).view(density.shape)
+
+    if blurred.sum() > 0:
+        blurred = blurred / blurred.sum()
+    return blurred
+
 
 def reflect_frame(coords):
     """Express 2D coords in the reflected (orientation-preserving) target frame.

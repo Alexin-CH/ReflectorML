@@ -22,16 +22,17 @@ if __name__ == "__main__":
         trained_model, raytracer, losses, loss_report, final_data, weights_log = train_surface(
             target=target,
             N=[2_500, 1_500, 1_500],  # [N_ma, N_bc, N_data]
-            loss_weights=[0, 0, 0, 1], # [w_ma, w_bc, w_cv, w_data]
-            epochs=500,
-            lr=1e-2,
+            loss_weights=[1, 1, 1, 1], # [w_ma, w_bc, w_cv, w_data]
+            epochs=20,
+            lr=1e-3,
 
-            adam_fraction=10,
+            adam_fraction=0,
             lbfgs_lr=0,
             lbfgs_history_size=10,
             lbfgs_max_iter=30,
 
             anneal=False,
+            blur_sigma=10,
             gif=40,
             device=device,
         )

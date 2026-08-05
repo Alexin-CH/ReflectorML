@@ -1,6 +1,19 @@
 import torch
 
 
+def anneal_blur_sigma(step, epochs, blur_sigma, blur_final=0.0):
+    """Linearly anneal the Gaussian blur width from `blur_sigma` to `blur_final`.
+
+    Early training sees heavily smoothed densities (smooth f/g -> well-posed MA),
+    which is progressively sharpened toward the true piecewise-constant densities
+    as training converges.
+    """
+    if epochs <= 1:
+        return blur_final
+    frac = min(max(step / (epochs - 1), 0.0), 1.0)
+    return blur_final + (blur_sigma - blur_final) * (1.0 - frac)
+
+
 def loss_grad_norm(loss_t, model):
     """Mean |grad| of a loss term wrt model params."""
     grads = torch.autograd.grad(
