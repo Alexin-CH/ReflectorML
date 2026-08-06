@@ -22,16 +22,16 @@ if __name__ == "__main__":
         trained_model, raytracer, losses, loss_report, final_data, weights_log = train_surface(
             target=target,
             N=[2_500, 1_500, 1_500],  # [N_ma, N_bc, N_data]
-            loss_weights=[1, 1, 1, 1], # [w_ma, w_bc, w_cv, w_data]
-            epochs=20,
-            lr=1e-3,
+            loss_weights=[1, 1, 1, 1, 1], # [w_ma, w_bc, w_cv, w_data, w_curl]
+            epochs=200,
+            lr=1e-4,
 
-            adam_fraction=0,
-            lbfgs_lr=0,
+            adam_fraction=10,
+            lbfgs_lr=1,
             lbfgs_history_size=10,
             lbfgs_max_iter=30,
 
-            anneal=False,
+            anneal=True,
             blur_sigma=10,
             gif=40,
             device=device,
@@ -61,7 +61,8 @@ if __name__ == "__main__":
         ax2.plot(wlog[:, 1])
         ax2.plot(wlog[:, 2])
         ax2.plot(wlog[:, 3])
-        ax2.legend([r"$w_{MA}$", r"$w_{BC}$", r"$w_{CV}$", r"$w_{data}$"], loc='center left', bbox_to_anchor=(1, 0.5))
+        ax2.plot(wlog[:, 4])
+        ax2.legend([r"$w_{MA}$", r"$w_{BC}$", r"$w_{CV}$", r"$w_{data}$", r"$w_{curl}$"], loc='center left', bbox_to_anchor=(1, 0.5))
         ax2.set_yscale('linear')
         ax2.set_xticklabels([])
         ax2.grid()

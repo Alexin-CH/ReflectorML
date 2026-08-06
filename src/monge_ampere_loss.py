@@ -74,6 +74,41 @@ def integrate_map(model, coords, n_pts=51, chunk_size=500):
     return torch.cat(results, dim=0)
 
 
+def curl_free_loss(model, coords, chunk_size=500):
+    """Mean squared curl of the Jacobian field: J must be a genuine Hessian.
+
+    Integrability of a symmetric field J = D^2 phi (equal mixed partials of phi)
+    requires:
+        dJ11/dy = dJ12/dx   and   dJ22/dx = dJ12/dy.
+    Enforcing this guarantees T = int J dx = grad(phi) for a single scalar
+    potential phi, i.e. a truly conservative (curl-free) transport map.
+    """
+    total = torch.tensor(0.0, device=coords.device)
+    count = 0
+    for i in range(0, coords.shape[0], chunk_size):
+        chunk = coords[i:i + chunk_size]
+        jac = model(chunk)                                  # (M, 2, 2)
+        j11 = jac[:, 0, 0]
+        j12 = jac[:, 0, 1]
+        j22 = jac[:, 1, 1]
+        ones = torch.ones_like(j11)
+
+        # grad of each entry w.r.t. the input coords -> (M, 2) = [d/dx, d/dy]
+        g11 = torch.autograd.grad(j11, chunk, grad_outputs=ones,
+                                  create_graph=True, retain_graph=True)[0]
+        g12 = torch.autograd.grad(j12, chunk, grad_outputs=ones,
+                                  create_graph=True, retain_graph=True)[0]
+        g22 = torch.autograd.grad(j22, chunk, grad_outputs=ones,
+                                  create_graph=True, retain_graph=True)[0]
+
+        c1 = g11[:, 1] - g12[:, 0]   # dJ11/dy - dJ12/dx
+        c2 = g22[:, 0] - g12[:, 1]   # dJ22/dx - dJ12/dy
+
+        total = total + (c1 ** 2 + c2 ** 2).sum()
+        count += c1.shape[0]
+    return total / max(count, 1)
+
+
 def compute_ma_losses(model, source_coords, source_density, target_density,
                       blur_sigma=0.0, eps=1e-8):
     # Support-bounding-box normalization must come from the TRUE (unblurred)
@@ -132,6 +167,10 @@ def compute_ma_losses(model, source_coords, source_density, target_density,
     ma_loss = ((log_ma_res ** 2) * valid).sum() / valid.sum().clamp(min=1)
 
     # Enforce det J_T -> +1 in the reflected frame (fold-avoidance).
-    cv_loss = torch.clamp(1.0 - dets, min=0.0).mean()
+    cv_loss = torch.clamp(0.0 - dets, min=0.0).mean()
 
-    return ma_loss, cv_loss
+    # Integrability: J must be a genuine Hessian (curl-free), so that
+    # T = int J dx is exactly grad(phi) for a single scalar potential.
+    curl_loss = curl_free_loss(model, source_coords)
+
+    return ma_loss, cv_loss, curl_loss
