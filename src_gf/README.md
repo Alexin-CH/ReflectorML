@@ -1,12 +1,10 @@
 # src_gf/ — Gradient-field (SPD Jacobian)
 
-Drops the potential and learns the Jacobian field `J(x) = D^2 phi` directly
-as an SPD matrix via a Cholesky parameterization; the map is recovered by
-integrating the field. An extra **curl-free** penalty (`w_curl`) enforces
-`J = D^2 phi` for a single scalar potential. Uses `network.py` + `icnn.py`.
+Drops the potential and learns the Jacobian field `J_T(x)` directly as an SPD matrix via a Cholesky parameterization; the map is recovered by integrating the field.
+An extra **curl-free** penalty (`w_curl`) enforces the path independence of the integration.
 
-- **Network** : `network.py` + `icnn.py` — `MirrorSurface` (SIREN -> Cholesky)
-- **Output** : SPD Jacobian `J(x) = L L^T` : `(N, 2, 2)`
+- **Network** : `network.py` - `MirrorSurface` (SIREN -> Cholesky)
+- **Output** : SPD Jacobian `J_T(x) = L L^T` : `(N, 2, 2)`
 - **Monge–Ampère loss** : Jacobian of the map + curl-free penalty
 - **Convexity** : **guaranteed** (SPD)
 

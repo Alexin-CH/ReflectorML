@@ -55,7 +55,7 @@ isolates the architecture.
 
 | | `src/` | `src_icnn/` | `src_gf/` |
 |---|---|---|---|
-| Network file | `network.py` | `network.py` + `icnn.py` | `network.py` + `icnn.py` |
+| Network file | `network.py` | `network.py` + `icnn.py` | `network.py` |
 | `MirrorSurface` | SIREN (sine MLP) | ICNN (input-convex ReLU backbone) | SIREN -> Cholesky SPD Jacobian |
 | Output | scalar `phi(x)` : `(N, 1)` | scalar `phi(x)` : `(N, 1)` | `J(x) = L L^T` : `(N, 2, 2)` |
 | Convexity of map | soft (CV loss on Hessian) | **guaranteed** by construction | **guaranteed** (SPD) |

@@ -1,12 +1,12 @@
 # src_icnn/ — ICNN scalar potential
 
-Replaces the SIREN baseline with an input-convex neural network (ICNN), so the
-potential is convex by construction and the transport map is theoretically a
-monotone map. Uses `network.py` + `icnn.py`.
+Uses an input-convex neural network (ICNN), so the potential is convex by construction and the transport map is theoretically a monotone map.
 
-- **Network** : `network.py` + `icnn.py` — `MirrorSurface` (ICNN)
+Uses `network.py` + `icnn.py`.
+
+- **Network** : `network.py` + `icnn.py` - `MirrorSurface` (ICNN)
 - **Output** : scalar `phi(x)` : `(N, 1)`
-- **Monge–Ampère loss** : Hessian of `phi`
+- **Monge–Ampère loss** : Jacobian of `T = raytracer(x, phi(x))`
 - **Convexity** : **guaranteed** by construction
 
 ## Run

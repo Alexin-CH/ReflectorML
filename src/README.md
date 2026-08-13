@@ -2,11 +2,13 @@
 
 Baseline implementation. Learns a scalar potential `phi(x)` with a SIREN
 (sine-activated MLP) network; the transport map is obtained by ray-tracing
-through the resulting mirror surface.
+through the resulting mirror surface:
 
-- **Network** : `network.py` — `MirrorSurface` (SIREN)
-- **Output** : scalar `phi(x)` : `(N, 1)`
-- **Monge–Ampère loss** : Hessian of `phi`
+$T(x) = raytracer(x, phi(x))$
+
+- **Network** : `network.py` - `MirrorSurface` (SIREN)
+- **Output** : scalar deformation `phi(x)` : `(N, 1)`
+- **Monge–Ampère loss** : Jacobian of `T`
 - **Convexity** : soft (CV loss penalizes negative Hessian eigenvalues)
 
 ## Run
@@ -18,8 +20,7 @@ make
 python src/main.py
 ```
 
-Trains on the targets `square`, `spiral`, `bat`, `cards`, `heart`, `plus`,
-`qm`, `pig`.
+Trains on the targets `square`, `spiral`, `bat`, `cards`, `heart`, `plus`, `qm`, `pig`.
 
 ## Results
 
