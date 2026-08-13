@@ -1,5 +1,7 @@
 # src_gf/ — Gradient-field (SPD Jacobian)
 
+Details: [https://alexin.cclaude.rocks/projects/reflectorml/#43-integration-of-a-dsp-jacobian-pinn](https://alexin.cclaude.rocks/projects/reflectorml/#43-integration-of-a-dsp-jacobian-pinn)
+
 Drops the potential and learns the Jacobian field `J_T(x)` directly as an SPD matrix via a Cholesky parameterization; the map is recovered by integrating the field.
 An extra **curl-free** penalty (`w_curl`) enforces the path independence of the integration.
 

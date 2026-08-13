@@ -1,5 +1,7 @@
 # src/ — SIREN scalar potential
 
+Details: [https://alexin.cclaude.rocks/projects/reflectorml/#41-siren-like-pinn](https://alexin.cclaude.rocks/projects/reflectorml/#41-siren-like-pinn)
+
 Baseline implementation. Learns a scalar potential `phi(x)` with a SIREN
 (sine-activated MLP) network; the transport map is obtained by ray-tracing
 through the resulting mirror surface:

@@ -1,5 +1,7 @@
 # src_icnn/ — ICNN scalar potential
 
+Details: [https://alexin.cclaude.rocks/projects/reflectorml/#42-icnn-input-convex-nn](https://alexin.cclaude.rocks/projects/reflectorml/#42-icnn-input-convex-nn)
+
 Uses an input-convex neural network (ICNN), so the potential is convex by construction and the transport map is theoretically a monotone map.
 
 Uses `network.py` + `icnn.py`.
