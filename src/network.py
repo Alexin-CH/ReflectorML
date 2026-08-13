@@ -4,10 +4,77 @@ import torch.nn.functional as F
 
 import numpy as np
 
+# Improved fully-connected architecture (Wang, Peng, Perdikaris GRAD 2020.
+# "Understanding and Mitigating Gradient Pathologies in Physics-Informed Neural
+# Networks", 2001.04536, eqs. 43-47). Multiplicative input interaction via two
+# fixed feature branches U, V, with hidden states H_k interpolating between them:
+#   U = phi(X W1 + b1),  V = phi(X W2 + b2)
+#   H^(1)   = phi(X Wz,1 + bz,1)
+#   Z^(k)   = phi(H^(k) Wz,k + bz,k), k=1..L
+#   H^(k+1) = (1 - Z^(k)) .* U + Z^(k) .* V
+#   f(x)    = H^(L+1) W + b
+
+class MirrorSurfaceFV(nn.Module):
+    def __init__(self, width=128, depth=4, activation=F.tanh):
+        super().__init__()
+        self.width = width
+        self.depth = depth
+        self.activation = activation
+        d = 2  # input spatial dimension
+
+        # Two fixed feature branches (multiplicative interaction)
+        self.W1 = nn.Parameter(torch.Tensor(d, width))
+        self.b1 = nn.Parameter(torch.zeros(width))
+        self.W2 = nn.Parameter(torch.Tensor(d, width))
+        self.b2 = nn.Parameter(torch.zeros(width))
+
+        # Gate projections
+        self.Wz = nn.ParameterList()
+        self.bz = nn.ParameterList()
+        for _ in range(depth):
+            self.Wz.append(nn.Parameter(torch.Tensor(width, width)))
+            self.bz.append(nn.Parameter(torch.zeros(width)))
+
+        # First hidden projection
+        self.Wz0 = nn.Parameter(torch.Tensor(d, width))
+        self.bz0 = nn.Parameter(torch.zeros(width))
+
+        # Output
+        self.Wout = nn.Parameter(torch.Tensor(width, 1))
+        self.bout = nn.Parameter(torch.zeros(1))
+
+        self.init_weights()
+
+    def init_weights(self):
+        for w, b in [(self.W1, self.b1), (self.W2, self.b2),
+                     (self.Wz0, self.bz0)] + \
+                    [(w, b) for w, b in zip(self.Wz, self.bz)]:
+            nn.init.xavier_uniform_(w)
+            nn.init.zeros_(b)
+        nn.init.uniform_(self.Wout, -1e-8, 1e-8)
+        nn.init.zeros_(self.bout)
+
+    def forward(self, coords):
+        U = self.activation(coords @ self.W1 + self.b1)
+        V = self.activation(coords @ self.W2 + self.b2)
+        H = self.activation(coords @ self.Wz0 + self.bz0)
+        for w, b in zip(self.Wz, self.bz):
+            Z = self.activation(H @ w + b)
+            H = (1 - Z) * U + Z * V
+        return H @ self.Wout + self.bout
+
+    def save_model(self, filepath):
+        torch.save(self.state_dict(), filepath)
+
+    def load_model(self, filepath):
+        self.load_state_dict(torch.load(filepath))
+        return self
+
+
 # SIREN: https://arxiv.org/abs/2006.09661
 
 class SineLayer(nn.Module):
-    def __init__(self, in_features, out_features, bias=True, w0=30):
+    def __init__(self, in_features, out_features, bias=True, w0=15):
         super().__init__()
         self.w0 = w0
         self.linear = nn.Linear(in_features, out_features, bias=bias)
@@ -41,63 +108,52 @@ class HSineLayer(nn.Module):
         x = torch.sinh(self.r * self.linear(input))
         return torch.sin(self.w0 * x)
 
+class TanhLayer(nn.Module):
+    def __init__(self, in_features, out_features, bias=True, w0=None):
+        super().__init__()
+        self.w0 = w0
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, input):
+        return torch.tanh(self.linear(input))
 
 class MirrorSurface(nn.Module):
-    """Learn the transport map's Jacobian field J_T directly (differential MA).
-
-    forward(x) returns the (N, 2, 2) Jacobian of the transport map T at each
-    point x, measured in the reflected (orientation-preserving) frame. The map
-    itself is recovered by integrating this field along the ray from the origin,
-    T(x) = int_0^1 J_T(s x) x ds, assuming T(0) = 0 in the source frame.
-
-    J_T is parameterized as symmetric positive-definite (SPD) via its Cholesky
-    factor: J = L L^T with L = [[p, 0], [q, r]]. This is the exact function
-    class of the Brenier map T = grad(phi) (phi convex), so det J = p^2 r^2 >= 0
-    is guaranteed by construction and the map is always a valid, fold-free
-    orientation-preserving gradient field.
-    """
     def __init__(self):
         super().__init__()
         
         self.net = nn.Sequential(
             SineLayer(2, 512),
-            nn.Linear(512, 256),
-            nn.Mish(),
-            nn.Linear(256, 256),
-            nn.Mish(),
-            nn.Linear(256, 3),  # Cholesky entries (p, q, r)
+            SineLayer(512, 256),
+            SineLayer(256, 256), # SineLayer or FINERLayer or HSineLayer
+            nn.Linear(256, 1)
         )
 
-        # Init to the identity Jacobian: p=1, q=0, r=1 -> J = I, det = +1,
-        # T ~ x. A planar-ish start in the reflected frame. With exp() on p,r,
-        # identity corresponds to raw outputs p=0, r=0 (and q=0 by the zero
-        # weight init).
+        self.init_weights()
+        
+    def init_weights(self):
         with torch.no_grad():
+            # Siren first layer initialization
             limit = 1 / self.net[0].linear.weight.shape[1]
             self.net[0].linear.weight.uniform_(-limit, limit)
 
-            self.net[-1].weight.zero_()
-            self.net[-1].bias.zero_()
+            # Siren non-first layers initialization
+            for layer in self.net[1:-1]:
+                limit = np.sqrt(6 / layer.linear.weight.shape[1]) / layer.w0
+                layer.linear.weight.uniform_(-limit, limit)
+
+            # Initialize final layer to be very close to 0
+            # This ensures we start with an almost perfect 45-degree planar mirror
+            # This is very important to avoid divergence !
+            self.net[-1].weight.uniform_(-1e-8, 1e-8)
 
     def forward(self, coords):
-        p, q, r = self.net(coords).chunk(3, dim=1)  # (N,1) each
-        p = p.exp()
-        r = r.exp()
-
-        # L = [[p, 0], [q, r]] ; J = L L^T (SPD by construction)
-        j11 = p * p
-        j12 = p * q
-        j22 = q * q + r * r
-
-        j = torch.cat([
-            torch.cat([j11, j12], dim=1),
-            torch.cat([j12, j22], dim=1),
-        ], dim=1).view(-1, 2, 2)
-        return j
+        # Neural offset (The freeform deformation)
+        deformation = self.net(coords)
+        return deformation
 
     def save_model(self, filepath):
         torch.save(self.state_dict(), filepath)
 
     def load_model(self, filepath):
-        self.load_state_dict(torch.load(filepath, weights_only=True))
+        self.load_state_dict(torch.load(filepath))
         return self

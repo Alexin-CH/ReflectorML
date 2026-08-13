@@ -38,11 +38,22 @@ def density_at_coords(density, coords, max_size=1):
 def compute_ma_losses(model, raytracer, source_coords, source_density, target_density, eps=1e-8):
     # Densities as probability measures (int f = int g = 1)
     f_norm = source_density / source_density.sum()
-    g_norm = target_density / target_density.sum()
 
-    # Physical transport map T(x) = raytracer(x, phi(x))
+    # Target measured in the reflected (orientation-preserving) frame, matching
+    # MOKA. The base 45deg plane maps (x,z) -> (y_target, z) with det = -1;
+    # flipping the target's vertical axis turns it into an orientation-preserving
+    # map, so det >= 0 and the Monge-Ampere equation holds WITHOUT an absorbing
+    # absolute value. The target density is mirrored consistently: coords[:,0]
+    # is the column axis (pixels_to_coords flips rows, and density_at_coords maps
+    # coords[:,0]->col idx), so a negation of the first output axis corresponds
+    # to a column flip (dims=[1]).
+    g_norm = torch.flip(target_density / target_density.sum(), dims=[1])
+
+    # Physical transport map T(x) = raytracer(x, phi(x)), expressed in the
+    # reflected target frame: first output axis is flipped.
     def map_at(x):
-        return raytracer(x, model(x))
+        mapped = raytracer(x, model(x))
+        return torch.cat([-mapped[:, 0:1], mapped[:, 1:2]], dim=1)
 
     mapped = map_at(source_coords)
 
@@ -58,15 +69,15 @@ def compute_ma_losses(model, raytracer, source_coords, source_density, target_de
     )[0]
     jacobians = torch.stack([d_out_x, d_out_z], dim=1)  # (N, 2, 2)
 
-    # Stable log-determinant
-    _, logabsdet = torch.linalg.slogdet(jacobians)
+    # Stable log-determinant (positive in the reflected frame)
+    logabsdet, _ = torch.linalg.slogdet(jacobians)
 
     g = density_at_coords(g_norm, mapped)
 
-    # Only enforce MA where the map lands inside the target support
+    # Only enforce where the mapped density lands inside the target density
     support_mask = g > eps
 
-    # Jacobian of the pixel -> normalized map: |det A| = (max_size/max_coord)^2.
+    # Jacobian of the pixel -> normalized map: |det| = (max_size/max_coord)^2.
     # Both spaces use max_size=1, so |det A_t|/|det A_s| = (max_coord_s/max_coord_t)^2
     # must be folded into the residual for the equation to hold in normalized coords.
     _, _, max_coord_s = density_to_normalization_params(source_density)
@@ -76,7 +87,13 @@ def compute_ma_losses(model, raytracer, source_coords, source_density, target_de
     log_g = torch.log(g + eps)
     log_ma_res = logabsdet - (log_f - log_g) \
         - 2 * (torch.log(max_coord_s) - torch.log(max_coord_t))
-    ma_loss = ((log_ma_res ** 2) * support_mask).sum() / support_mask.sum().clamp(min=1)
+
+    # Degenerate maps (det <= 0) are non-physical (local folds): exclude them
+    # from the log-residual, they are penalized by the CV term below instead.
+    dets = torch.linalg.det(jacobians)
+    valid = support_mask & (dets > 0)
+
+    ma_loss = ((log_ma_res ** 2) * valid).sum() / valid.sum().clamp(min=1)
 
     # Convexity: penalize negative Hessian eigenvalues only (SPD constraint).
     cv_loss = torch.clamp(-torch.linalg.eigvalsh(jacobians), min=0.0).mean()

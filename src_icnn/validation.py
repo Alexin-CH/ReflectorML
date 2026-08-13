@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from sources import gray_image_to_density, density_to_coords, density_contour_coords
+from sources import gray_image_to_density, density_to_coords, density_contour_coords, reflect_frame
 from plot_results import plot_results
 
 def validate_surface(mirror_model, raytracer, source_img, target_img, step, device):
@@ -17,7 +17,7 @@ def validate_surface(mirror_model, raytracer, source_img, target_img, step, devi
     ).to(device).requires_grad_(True)
 
     deformation = mirror_model(source_coords)
-    predicted_coords = raytracer(source_coords, deformation)
+    predicted_coords = reflect_frame(raytracer(source_coords, deformation))
 
     # Boundary condition coords (source contour) and their raytracer outputs
     source_contour_coords = density_contour_coords(
@@ -26,19 +26,19 @@ def validate_surface(mirror_model, raytracer, source_img, target_img, step, devi
         num_points=2000
     ).to(device).requires_grad_(True)
 
-    bc_outputs = raytracer(source_contour_coords, mirror_model(source_contour_coords))
+    bc_outputs = reflect_frame(raytracer(source_contour_coords, mirror_model(source_contour_coords)))
 
     target_density = gray_image_to_density(target_img).to(device)
-    target_coords = density_to_coords(
+    target_coords = reflect_frame(density_to_coords(
         density_map=target_density,
         max_size=1,
         num_points=10_000
-    ).to(device)
-    target_contour_coords = density_contour_coords(
+    ).to(device))
+    target_contour_coords = reflect_frame(density_contour_coords(
         density_map=target_density,
         max_size=1,
         num_points=2000
-    ).to(device)
+    ).to(device))
 
     x = torch.linspace(-1.2, 1.2, 100).to(device)
     y = torch.linspace(-1.2, 1.2, 100).to(device)

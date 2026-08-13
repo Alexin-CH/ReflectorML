@@ -10,12 +10,13 @@ from geomloss import SamplesLoss
 from tqdm import tqdm
 
 from sources import coords_to_density, density_to_coords, \
-    gray_image_to_density, coords_beam, density_beam, density_contour_coords
+    gray_image_to_density, coords_beam, density_beam, density_contour_coords, reflect_frame
 from validation import validate_surface
-from network import MirrorSurface, MirrorSurfaceFV
+from network import MirrorSurface
 from raytracer import MirrorRayTracer
 from monge_ampere_loss import compute_ma_losses
 from plot_results import gif_from_data
+from annealing import anneal_weights
 
 
 def pct_change(a, b):
@@ -24,43 +25,10 @@ def pct_change(a, b):
     return (b_f - a_f) / a_f * 100.0 if a_f != 0 else float('nan')
 
 
-def loss_grad_norm(loss_t, model):
-    """Mean |grad| of a loss term wrt model params (Eq. 40 numerator/denominator)."""
-    grads = torch.autograd.grad(
-        loss_t, model.parameters(),
-        retain_graph=True, allow_unused=True
-    )
-    total = 0.0
-    count = 0.0
-    for g in grads:
-        if g is None:
-            continue
-        total = total + g.abs().sum()
-        count = count + g.numel()
-    return total / count
-
-
-def anneal_weights(model, ma_loss, cv_loss, bc_loss, transport_loss,
-                   loss_weights, alpha):
-    """Wang et al. 2001.04536, Algorithm 1.
-
-    Using the MA (physics) term as the reference Lr, rescale the CV/BC/data
-    weighting lambdas so that the mean back-propagated gradient magnitude of each
-    term is matched to that of the MA term. loss_weights is updated IN PLACE
-    (mutated) so that closures capture the final values via the same list object.
-    """
-    ref = loss_grad_norm(ma_loss, model) + 1e-12
-    for term, idx in ((cv_loss, 2), (bc_loss, 1), (transport_loss, 3)):
-        if loss_weights[idx] == 0:
-            continue
-        lam = ref / (loss_grad_norm(term, model) + 1e-12)
-        loss_weights[idx] = (1 - alpha) * loss_weights[idx] + alpha * float(lam)
-
-
 # --- TRAINING LOOP ---
 def train_surface(target, epochs, N, lr, device, loss_weights,
                   adam_fraction, lbfgs_lr, lbfgs_max_iter, lbfgs_history_size,
-                  gif=0, model="siren", anneal=False, anneal_alpha=0.9,
+                  gif=0, anneal=False, anneal_alpha=0.9,
                   anneal_freq=5):
     # Setup
     epochs = int(epochs)
@@ -73,10 +41,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
     # Unpack loss weights: loss_weights = [w_ma, w_bc, w_cv, w_data]
     w_ma, w_bc, w_cv, w_data = loss_weights
 
-    if model == "fv":
-        mirror_model = MirrorSurfaceFV().to(device)
-    else:
-        mirror_model = MirrorSurface().to(device)
+    mirror_model = MirrorSurface().to(device)
     raytracer = MirrorRayTracer(target_x=10).to(device)
 
     # Stage 1: AdamW optimizer
@@ -104,6 +69,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
     print()
     losses = []
     list_data = []
+    weights_log = []
 
     # Open image
     source_img = np.array(Image.open("templates/circle.png"))
@@ -133,6 +99,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         max_size=1,
         num_points=N_bc
     ).to(device)
+    target_contour_coords = reflect_frame(target_contour_coords)
 
     # Inner data points (OT with sinkhorn loss)
     source_coords = density_to_coords(
@@ -146,6 +113,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         max_size=1,
         num_points=N_data
     ).to(device)
+    target_coords = reflect_frame(target_coords)
 
     tqdm_epochs = tqdm(range(epochs+1), desc="Training", dynamic_ncols=True)
     for step in tqdm_epochs:
@@ -197,7 +165,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
                 optimizer.zero_grad()
 
                 deformation = mirror_model(source_coords)
-                predicted_coords = raytracer(source_coords, deformation)
+                predicted_coords = reflect_frame(raytracer(source_coords, deformation))
 
                 ma_loss, cv_loss = compute_ma_losses(
                     model=mirror_model,
@@ -207,10 +175,10 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
                     target_density=target_density
                 )
 
-                bc_loss = sinkhorn_loss(
-                    raytracer(source_contour_coords, mirror_model(source_contour_coords)),
-                    target_contour_coords
-                ) ** 2
+                bc_predicted = reflect_frame(
+                    raytracer(source_contour_coords, mirror_model(source_contour_coords))
+                )
+                bc_loss = sinkhorn_loss(bc_predicted, target_contour_coords) ** 2
 
                 transport_loss = sinkhorn_loss(predicted_coords, target_coords) ** 2
                 physics_loss = w_ma * ma_loss + w_cv * cv_loss
@@ -225,7 +193,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         optimizer.zero_grad()
 
         deformation = mirror_model(source_coords)
-        predicted_coords = raytracer(source_coords, deformation)
+        predicted_coords = reflect_frame(raytracer(source_coords, deformation))
 
         ma_loss, cv_loss = compute_ma_losses(
             model=mirror_model,
@@ -235,10 +203,10 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
             target_density=target_density
         )
 
-        bc_loss = sinkhorn_loss(
-            raytracer(source_contour_coords, mirror_model(source_contour_coords)),
-            target_contour_coords
-        ) ** 2
+        bc_predicted = reflect_frame(
+            raytracer(source_contour_coords, mirror_model(source_contour_coords))
+        )
+        bc_loss = sinkhorn_loss(bc_predicted, target_contour_coords) ** 2
 
         transport_loss = sinkhorn_loss(predicted_coords, target_coords) ** 2
 
@@ -265,14 +233,20 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         elif stage == "L-BFGS":
             scheduler.step(loss.item())
 
+        # Unweighted sum of the raw loss terms (physical Total). Column 0 in
+        # `losses` is this unweighted sum, not the annealed scalar held by
+        # `loss`, so the reported/loss "Total" is the bare physics sum.
+        unweighted_total = ma_loss + cv_loss + transport_loss + bc_loss
+
         losses.append((
-            loss.cpu().item(),
+            unweighted_total.cpu().item(),
             transport_loss.cpu().item(),
             ma_loss.cpu().item(),
             cv_loss.cpu().item(),
             bc_loss.cpu().item(),
             optimizer.param_groups[0]['lr']
         ))
+        weights_log.append((w_ma, w_bc, w_cv, w_data))
 
         if step > epochs / 10 and loss // losses[0][0] > 1e2 and not anneal:
             raise RuntimeError("Unexpected loss evolution, exiting...")
@@ -311,4 +285,4 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         device=device
     )
 
-    return mirror_model, raytracer, losses, loss_report, final_data
+    return mirror_model, raytracer, losses, loss_report, final_data, weights_log

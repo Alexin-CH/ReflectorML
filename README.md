@@ -28,6 +28,25 @@ This project implements a hybrid method that aims to use both:
 - PyTorch raytracer (with automatic differentiation) with a transport loss
 - Physical loss based on the Monge-Ampere equation.
 
+## Implementations
+
+This repository contains three parallel implementations of the same reflector problem:
+
+| Directory | Approach | Network output | Monge-Ampère loss |
+|---|---|---|---|
+| `src/` | Potential-based (`MirrorSurface` / `MirrorSurfaceFV`) | Scalar potential `phi(x)` | Hessian of `phi` |
+| `src_icnn/` | Input Convex Neural Network potential | Scalar potential `phi(x)` | Hessian of `phi` |
+| `src_gf/` | Gradient-field | Vector field `nabla phi(x)` | Jacobian of `nabla phi` |
+
+Run each implementation from the repository root (templates, images, and tests are shared):
+
+```bash
+make
+python src/main.py        # potential-based
+python src_icnn/main.py   # ICNN potential
+python src_gf/main.py     # gradient-field
+```
+
 ## Getting Started
 
 ### Prerequisites
@@ -47,8 +66,19 @@ cd ReflectorML
 ```
 
 Install the required dependencies:
-``` bash
+```bash
 make
+```
+
+- - -
+
+## Tests
+
+Visual verification scripts live in `tests/` (run from the repository root):
+
+```bash
+python tests/test_sampling.py       # density sampling sanity check
+python tests/test_activation.py     # activation function check (gradient-field)
 ```
 
 - - -

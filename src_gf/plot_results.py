@@ -115,7 +115,7 @@ def plot_results(surface_mesh, source_coords, source_contour_coords,
     ax.set_title("Mirror Surface", fontweight='bold')
     plt.colorbar(surf, ax=ax, shrink=0.8, pad=0.2)
 
-    # Output density: B&W 2D histogram of raytracer outputs (data + bc), domain [-1.2, 1.2]^2
+    # Output density: B&W 2D histogram of transport outputs (data + bc), domain [-1.2, 1.2]^2
     ax = plt.subplot(2, 2, 4)
     output_coords = torch.cat([predicted_coords, bc_outputs], dim=0)
     output_density = coords_to_density(

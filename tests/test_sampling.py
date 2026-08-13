@@ -13,7 +13,7 @@ batch_size = 2500
 
 # === #
 
-source_img = np.array(Image.open("src/templates/circle.png"))
+source_img = np.array(Image.open("templates/circle.png"))
 source_img = torch.tensor(source_img)
 source_density = gray_image_to_density(source_img).to(device)
 
@@ -47,7 +47,7 @@ plt.show()
 
 for target in ["pi", "spiral", "square", "bat", "cards", "heart", "plus", "qm"]:
 
-    target_img_pil = Image.open(f"src/templates/{target}.png")
+    target_img_pil = Image.open(f"templates/{target}.png")
     target_img = np.array(target_img_pil).mean(axis=2)
 
     resolution = np.array([

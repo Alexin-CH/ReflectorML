@@ -1,5 +1,16 @@
 import torch
 
+def reflect_frame(coords):
+    """Express 2D coords in the reflected (orientation-preserving) target frame.
+
+    The base 45deg mirror maps (x, z) -> (y_target ~ -x, z), which reverses
+    orientation (det = -1). Flipping the vertical (first) axis makes the map
+    orientation-preserving, matching the reflected-frame Monge-Ampere loss.
+    Applying the same flip to both predicted and target point clouds is an
+    isometry, so sinkhorn distances are unchanged.
+    """
+    return torch.cat([-coords[:, 0:1], coords[:, 1:2]], dim=1)
+
 def coords_to_edges(coords, n_ubins=200, n_vbins=200):
     u_coords = coords[:, 1].clone()
     v_coords = coords[:, 0].clone()
@@ -143,10 +154,14 @@ def density_to_normalization_params(density_map):
     max_coord = torch.maximum(half_row, half_col)
     return row_center, col_center, max_coord
 
-def gray_image_to_density(gray_image):
+def gray_image_to_density(gray_image, normalize=True):
     if gray_image.max() > 1:
         gray_image = gray_image / 255.0
-    return  1 - gray_image
+    density = 1 - gray_image
+    if not normalize:
+        return density
+    else:
+        return density / density.sum()
 
 #
 # #
