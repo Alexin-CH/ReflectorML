@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 import numpy as np
 
 # SIREN: https://arxiv.org/abs/2006.09661
 
 class SineLayer(nn.Module):
-    def __init__(self, in_features, out_features, bias=True, w0=30):
+    def __init__(self, in_features, out_features, bias=True, w0=15):
         super().__init__()
         self.w0 = w0
         self.linear = nn.Linear(in_features, out_features, bias=bias)
@@ -41,6 +40,15 @@ class HSineLayer(nn.Module):
         x = torch.sinh(self.r * self.linear(input))
         return torch.sin(self.w0 * x)
 
+class TanhLayer(nn.Module):
+    def __init__(self, in_features, out_features, bias=True, w0=None):
+        super().__init__()
+        self.w0 = w0
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, input):
+        return torch.tanh(self.linear(input))
+
 class MirrorSurface(nn.Module):
     def __init__(self):
         super().__init__()
@@ -48,7 +56,7 @@ class MirrorSurface(nn.Module):
         self.net = nn.Sequential(
             SineLayer(2, 512),
             SineLayer(512, 256),
-            FINERLayer(256, 256), # SineLayer or FINERLayer or HSineLayer
+            SineLayer(256, 256), # SineLayer or FINERLayer or HSineLayer
             nn.Linear(256, 1)
         )
 
@@ -70,7 +78,7 @@ class MirrorSurface(nn.Module):
             # This is very important to avoid divergence !
             self.net[-1].weight.uniform_(-1e-8, 1e-8)
 
-    def forward(self, coords):        
+    def forward(self, coords):
         # Neural offset (The freeform deformation)
         deformation = self.net(coords)
         return deformation

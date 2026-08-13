@@ -1,5 +1,7 @@
 # ReflectorML
 
+Project page: [https://alexin.cclaude.rocks/projects/reflectorml/](https://alexin.cclaude.rocks/projects/reflectorml/)
+
 ## Introduction
 
 Free-form reflector design is essential in optics for precisely shaping light distributions, with applications in automotive lighting, energy-efficient LED optics, laser-based manufacturing, aerospace systems, and medical imaging.
@@ -28,6 +30,25 @@ This project implements a hybrid method that aims to use both:
 - PyTorch raytracer (with automatic differentiation) with a transport loss
 - Physical loss based on the Monge-Ampere equation.
 
+## Implementations
+
+This repository contains three parallel implementations of the same reflector problem:
+
+| Directory | Approach | Network | Network output | Monge-Ampère loss |
+|---|---|---|---|---|
+| `src/` | SIREN scalar potential | `MirrorSurface` (SIREN) | Scalar potential `phi(x)` | Hessian of `phi` |
+| `src_icnn/` | Input Convex Neural Network potential | `MirrorSurface` (ICNN) | Scalar potential `phi(x)` | Hessian of `phi` |
+| `src_gf/` | Gradient-field | `MirrorSurface` (SIREN) | SPD Jacobian `J(x) = D^2 phi` | Jacobian of the map + curl-free penalty |
+
+Run each implementation from the repository root (templates and tests are shared):
+
+```bash
+make
+python src/main.py        # potential-based
+python src_icnn/main.py   # ICNN potential
+python src_gf/main.py     # gradient-field
+```
+
 ## Getting Started
 
 ### Prerequisites
@@ -47,37 +68,29 @@ cd ReflectorML
 ```
 
 Install the required dependencies:
-``` bash
+```bash
 make
 ```
 
 - - -
 
-## Results ([See more](images/))
+## Results
 
-> After extensive tests, I presume that those results are mainly led by the transport loss rather than the MA loss.
+Each implementation documents its results in its own README:
 
-### Square
-![square](images/target_square.gif)
-
-### Spiral
-![spiral](images/target_spiral.gif)
-
-### Pi
-![pi](images/target_pi.gif)
-
-### Cards
-![cards](images/target_cards.gif)
-
-[See more results](images/)
+- [src/](src/README.md) — SIREN scalar potential
+- [src_icnn/](src_icnn/README.md) — ICNN scalar potential
+- [src_gf/](src_gf/README.md) — gradient-field (SPD Jacobian)
 
 - - -
 
 ## Acknowledgments
 
-This project is inspired by the paper **"A Neural Network Approach for Solving the Monge-Ampère Equation with Transport Boundary Condition"** (arXiv:2410.19496v1, Oct 25, 2024).
-You can read the paper [here](https://arxiv.org/abs/2410.19496).
+This project is inspired by several papers:
+- **"A Neural Network Approach for Solving the Monge-Ampère Equation with Transport Boundary Condition"**  
+    You can read the paper [here](https://doi.org/10.48550/arXiv.2410.19496).  
+- **"Input Convex Neural Networks"**  
+    You can read the paper [here](https://doi.org/10.48550/arXiv.1609.07152)  
+- **"Convex Physics Informed Neural Networks for the Monge-Ampère Optimal Transport Problem"**  
+    You can read the paper [here](https://doi.org/10.48550/arXiv.2501.10162)
 
-## Thanks
-
-Special thanks to **[Valentin MALQUY](https://github.com/Valentin-Malquy)** for their preliminary work on this topic. Your contributions and insights have been invaluable in shaping this project.

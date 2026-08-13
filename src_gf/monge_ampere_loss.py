@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torch.func import vmap
 
 from sources import density_to_normalization_params, gaussian_blur
 
@@ -38,7 +39,77 @@ def density_at_coords(density, coords, max_size=1, norm_params=None):
     return sampled.view(-1)
 
 
-def compute_ma_losses(model, raytracer, source_coords, source_density, target_density,
+def integrate_map(model, coords, n_pts=51, chunk_size=500):
+    """Recover T from its Jacobian field by Simpson line integration.
+
+    T(x) = int_0^1 J_T(s x) x ds, with the straight path s -> s x from the
+    origin (T(0) = 0 in the source frame). Differentiable w.r.t. model params.
+    Returns (N, 2) transport map in the same (reflected) frame as J_T.
+    """
+    if n_pts % 2 == 0:
+        n_pts += 1
+    device = coords.device
+    N = coords.shape[0]
+    s = torch.linspace(0, 1, n_pts, device=device)
+
+    h = 1.0 / (n_pts - 1)
+    weights = torch.ones(n_pts, device=device)
+    weights[1:-1:2] = 4.0
+    weights[2:-1:2] = 2.0
+
+    # Evaluate J along the straight paths in chunks to bound GPU memory:
+    # scaled has shape (n_pts, chunk, 2), feeding n_pts*chunk rows at a time.
+    results = []
+    for i in range(0, N, chunk_size):
+        chunk = coords[i:i + chunk_size]
+        M = chunk.shape[0]
+        scaled = s[:, None, None] * chunk[None, :, :]         # (n_pts, M, 2)
+        J = model(scaled.reshape(-1, 2)).reshape(n_pts, M, 2, 2)  # (n_pts,M,2,2)
+
+        # J(s x) @ x  -> (n_pts, M, 2)
+        integrand = torch.einsum('sMij,Mj->sMi', J, chunk)
+        T = h / 3.0 * torch.sum(weights[:, None, None] * integrand, dim=0)
+        results.append(T)
+
+    return torch.cat(results, dim=0)
+
+
+def curl_free_loss(model, coords, chunk_size=500):
+    """Mean squared curl of the Jacobian field: J must be a genuine Hessian.
+
+    Integrability of a symmetric field J = D^2 phi (equal mixed partials of phi)
+    requires:
+        dJ11/dy = dJ12/dx   and   dJ22/dx = dJ12/dy.
+    Enforcing this guarantees T = int J dx = grad(phi) for a single scalar
+    potential phi, i.e. a truly conservative (curl-free) transport map.
+    """
+    total = torch.tensor(0.0, device=coords.device)
+    count = 0
+    for i in range(0, coords.shape[0], chunk_size):
+        chunk = coords[i:i + chunk_size]
+        jac = model(chunk)                                  # (M, 2, 2)
+        j11 = jac[:, 0, 0]
+        j12 = jac[:, 0, 1]
+        j22 = jac[:, 1, 1]
+        ones = torch.ones_like(j11)
+
+        # grad of each entry w.r.t. the input coords -> (M, 2) = [d/dx, d/dy]
+        g11 = torch.autograd.grad(j11, chunk, grad_outputs=ones,
+                                  create_graph=True, retain_graph=True)[0]
+        g12 = torch.autograd.grad(j12, chunk, grad_outputs=ones,
+                                  create_graph=True, retain_graph=True)[0]
+        g22 = torch.autograd.grad(j22, chunk, grad_outputs=ones,
+                                  create_graph=True, retain_graph=True)[0]
+
+        c1 = g11[:, 1] - g12[:, 0]   # dJ11/dy - dJ12/dx
+        c2 = g22[:, 0] - g12[:, 1]   # dJ22/dx - dJ12/dy
+
+        total = total + (c1 ** 2 + c2 ** 2).sum()
+        count += c1.shape[0]
+    return total / max(count, 1)
+
+
+def compute_ma_losses(model, source_coords, source_density, target_density,
                       blur_sigma=0.0, eps=1e-8):
     # Support-bounding-box normalization must come from the TRUE (unblurred)
     # densities: blurring dilates the support and would corrupt the
@@ -55,7 +126,7 @@ def compute_ma_losses(model, raytracer, source_coords, source_density, target_de
     f_norm = source_smooth / source_smooth.sum()
 
     # Target measured in the reflected (orientation-preserving) frame, matching
-    # MOKA. The base 45deg plane maps (x,z) -> (y_target, z) with det = -1;
+    # MOKA. The base 45deg plane maps (x,z) -> (y_target ~ -x, z) with det = -1;
     # flipping the target's vertical axis turns it into an orientation-preserving
     # map, so det >= 0 and the Monge-Ampere equation holds WITHOUT an absorbing
     # absolute value. The target density is mirrored consistently: coords[:,0]
@@ -64,29 +135,15 @@ def compute_ma_losses(model, raytracer, source_coords, source_density, target_de
     # to a column flip (dims=[1]).
     g_norm = torch.flip(target_smooth / target_smooth.sum(), dims=[1])
 
-    # Physical transport map T(x) = raytracer(x, phi(x)), expressed in the
-    # reflected target frame: first output axis is flipped.
-    def map_at(x):
-        mapped = raytracer(x, model(x))
-        return torch.cat([-mapped[:, 0:1], mapped[:, 1:2]], dim=1)
+    # Differential MA: the network outputs J_T(x) directly (reflected frame).
+    jacobians = model(source_coords)  # (N, 2, 2)
 
-    mapped = map_at(source_coords)
-
-    # Jacobian of the (pointwise) map: block-diagonal (2, 2) per source point
-    ones = torch.ones_like(mapped)
-    d_out_x = torch.autograd.grad(
-        mapped[:, 0], source_coords, grad_outputs=ones[:, 0],
-        create_graph=True, retain_graph=True
-    )[0]
-    d_out_z = torch.autograd.grad(
-        mapped[:, 1], source_coords, grad_outputs=ones[:, 1],
-        create_graph=True, retain_graph=True
-    )[0]
-    jacobians = torch.stack([d_out_x, d_out_z], dim=1)  # (N, 2, 2)
-
-    # Stable log-determinant (positive in the reflected frame)
+    # Stable log-determinant (positive near identity in the reflected frame)
     logabsdet, _ = torch.linalg.slogdet(jacobians)
+    dets = torch.linalg.det(jacobians)
 
+    # Recover the map by integration and sample g at the mapped coords
+    mapped = integrate_map(model, source_coords)
     g = density_at_coords(g_norm, mapped, norm_params=norm_t)
 
     # Only enforce where the mapped density lands inside the target density
@@ -105,7 +162,6 @@ def compute_ma_losses(model, raytracer, source_coords, source_density, target_de
 
     # Degenerate maps (det <= 0) are non-physical (local folds): exclude them
     # from the log-residual, they are penalized by the CV term below instead.
-    dets = torch.linalg.det(jacobians)
     valid = support_mask & (dets > 0)
 
     ma_loss = ((log_ma_res ** 2) * valid).sum() / valid.sum().clamp(min=1)
@@ -113,4 +169,8 @@ def compute_ma_losses(model, raytracer, source_coords, source_density, target_de
     # Convexity: penalize negative Hessian eigenvalues only (SPD constraint).
     cv_loss = torch.clamp(-torch.linalg.eigvalsh(jacobians), min=0.0).mean()
 
-    return ma_loss, cv_loss
+    # Integrability: J must be a genuine Hessian (curl-free), so that
+    # T = int J dx is exactly grad(phi) for a single scalar potential.
+    curl_loss = curl_free_loss(model, source_coords)
+
+    return ma_loss, cv_loss, curl_loss

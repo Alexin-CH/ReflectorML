@@ -10,11 +10,11 @@ from geomloss import SamplesLoss
 from tqdm import tqdm
 
 from sources import coords_to_density, density_to_coords, \
-    gray_image_to_density, coords_beam, density_beam, density_contour_coords, reflect_frame
+    gray_image_to_density, density_contour_coords, reflect_frame
 from validation import validate_surface
 from network import MirrorSurface
 from raytracer import MirrorRayTracer
-from monge_ampere_loss import compute_ma_losses
+from monge_ampere_loss import compute_ma_losses, integrate_map
 from plot_results import gif_from_data
 from annealing import anneal_weights, anneal_blur_sigma
 
@@ -38,8 +38,8 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
     # Unpack sample counts: N = [N_ma, N_bc, N_data]
     N_ma, N_bc, N_data = N
 
-    # Unpack loss weights: loss_weights = [w_ma, w_bc, w_cv, w_data]
-    w_ma, w_bc, w_cv, w_data = loss_weights
+    # Unpack loss weights: loss_weights = [w_ma, w_bc, w_cv, w_data, w_curl]
+    w_ma, w_bc, w_cv, w_data, w_curl = loss_weights
 
     mirror_model = MirrorSurface().to(device)
     raytracer = MirrorRayTracer(target_x=10).to(device)
@@ -50,12 +50,10 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         lr=lr,
         weight_decay=1e-8,
     )
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    scheduler = torch.optim.lr_scheduler.PolynomialLR(
         optimizer=optimizer,
-        mode="min",
-        factor=0.1,
-        patience=max(1, epochs // 10),
-        min_lr=lr * 1e-5
+        total_iters=epochs,
+        power=1
     )
     stage = "Adam"
 
@@ -120,7 +118,7 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
 
         # Blur width anneals toward blur_final: early steps see smooth f/g
         # (well-conditioned MA), the true sharp densities recovered at the end.
-        sigma = anneal_blur_sigma(step, epochs, blur_sigma, blur_final)
+        sigma = anneal_blur_sigma(step, epochs, blur_sigma)
 
         # Switch from Adam to L-BFGS
         if step == switch_epoch and stage == "Adam":
@@ -164,30 +162,26 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
                 sigma=sigma,
                 loss_weights=loss_weights
             ):
-                # Unpack loss weights: loss_weights = [w_ma, w_bc, w_cv, w_data]
-                w_ma, w_bc, w_cv, w_data = loss_weights
+                # Unpack loss weights: loss_weights = [w_ma, w_bc, w_cv, w_data, w_curl]
+                w_ma, w_bc, w_cv, w_data, w_curl = loss_weights
 
                 optimizer.zero_grad()
 
-                deformation = mirror_model(source_coords)
-                predicted_coords = reflect_frame(raytracer(source_coords, deformation))
+                predicted_coords = integrate_map(mirror_model, source_coords)
 
-                ma_loss, cv_loss = compute_ma_losses(
+                ma_loss, cv_loss, curl_loss = compute_ma_losses(
                     model=mirror_model,
-                    raytracer=raytracer,
                     source_coords=source_coords_ma,
                     source_density=source_density,
                     target_density=target_density,
                     blur_sigma=sigma
                 )
 
-                bc_predicted = reflect_frame(
-                    raytracer(source_contour_coords, mirror_model(source_contour_coords))
-                )
+                bc_predicted = integrate_map(mirror_model, source_contour_coords)
                 bc_loss = sinkhorn_loss(bc_predicted, target_contour_coords) ** 2
 
                 transport_loss = sinkhorn_loss(predicted_coords, target_coords) ** 2
-                physics_loss = w_ma * ma_loss + w_cv * cv_loss
+                physics_loss = w_ma * ma_loss + w_cv * cv_loss + w_curl * curl_loss
 
                 loss = physics_loss + w_bc * bc_loss + w_data * transport_loss
 
@@ -198,21 +192,17 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
 
         optimizer.zero_grad()
 
-        deformation = mirror_model(source_coords)
-        predicted_coords = reflect_frame(raytracer(source_coords, deformation))
+        predicted_coords = integrate_map(mirror_model, source_coords)
 
-        ma_loss, cv_loss = compute_ma_losses(
+        ma_loss, cv_loss, curl_loss = compute_ma_losses(
             model=mirror_model,
-            raytracer=raytracer,
             source_coords=source_coords_ma,
             source_density=source_density,
             target_density=target_density,
             blur_sigma=sigma
         )
 
-        bc_predicted = reflect_frame(
-            raytracer(source_contour_coords, mirror_model(source_contour_coords))
-        )
+        bc_predicted = integrate_map(mirror_model, source_contour_coords)
         bc_loss = sinkhorn_loss(bc_predicted, target_contour_coords) ** 2
 
         transport_loss = sinkhorn_loss(predicted_coords, target_coords) ** 2
@@ -227,23 +217,23 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
             )
 
         # Weights may have changed via balancing; unpack fresh every step.
-        w_ma, w_bc, w_cv, w_data = loss_weights
+        w_ma, w_bc, w_cv, w_data, w_curl = loss_weights
 
-        physics_loss = w_ma * ma_loss + w_cv * cv_loss
+        physics_loss = w_ma * ma_loss + w_cv * cv_loss + w_curl * curl_loss
 
         loss = physics_loss + w_bc * bc_loss + w_data * transport_loss
 
         if stage == "Adam":
             loss.backward()
             optimizer.step()
-            scheduler.step(loss.item())
+            scheduler.step()
         elif stage == "L-BFGS":
             scheduler.step(loss.item())
 
         # Unweighted sum of the raw loss terms (physical Total). Column 0 in
         # `losses` is this unweighted sum, not the annealed scalar held by
         # `loss`, so the reported/loss "Total" is the bare physics sum.
-        unweighted_total = ma_loss + cv_loss + transport_loss + bc_loss
+        unweighted_total = ma_loss + cv_loss + transport_loss + bc_loss + curl_loss
 
         losses.append((
             unweighted_total.cpu().item(),
@@ -251,9 +241,10 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
             ma_loss.cpu().item(),
             cv_loss.cpu().item(),
             bc_loss.cpu().item(),
+            curl_loss.cpu().item(),
             optimizer.param_groups[0]['lr']
         ))
-        weights_log.append((w_ma, w_bc, w_cv, w_data))
+        weights_log.append((w_ma, w_bc, w_cv, w_data, w_curl))
 
         if step > epochs / 10 and loss // losses[0][0] > 1e2 and not anneal:
             raise RuntimeError("Unexpected loss evolution, exiting...")
@@ -273,7 +264,8 @@ def train_surface(target, epochs, N, lr, device, loss_weights,
         f"{'Transport':<12}{float(fl[1]):12.6f}{float(ll[1]):12.6f}{pct_change(fl[1], ll[1]):12.3f}%\n"
         f"{'MA':<12}{float(fl[2]):12.6f}{float(ll[2]):12.6f}{pct_change(fl[2], ll[2]):12.3f}%\n"
         f"{'CV':<12}{float(fl[3]):12.6f}{float(ll[3]):12.6f}{pct_change(fl[3], ll[3]):12.3f}%\n"
-        f"{'BC':<12}{float(fl[4]):12.6f}{float(ll[4]):12.6f}{pct_change(fl[4], ll[4]):12.3f}%"
+        f"{'BC':<12}{float(fl[4]):12.6f}{float(ll[4]):12.6f}{pct_change(fl[4], ll[4]):12.3f}%\n"
+        f"{'Curl':<12}{float(fl[5]):12.6f}{float(ll[5]):12.6f}{pct_change(fl[5], ll[5]):12.3f}%"
     )
 
     print()
