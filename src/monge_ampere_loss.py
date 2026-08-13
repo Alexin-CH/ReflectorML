@@ -166,8 +166,8 @@ def compute_ma_losses(model, source_coords, source_density, target_density,
 
     ma_loss = ((log_ma_res ** 2) * valid).sum() / valid.sum().clamp(min=1)
 
-    # Enforce det J_T -> +1 in the reflected frame (fold-avoidance).
-    cv_loss = torch.clamp(0.0 - dets, min=0.0).mean()
+    # Convexity: penalize negative Hessian eigenvalues only (SPD constraint).
+    cv_loss = torch.clamp(-torch.linalg.eigvalsh(jacobians), min=0.0).mean()
 
     # Integrability: J must be a genuine Hessian (curl-free), so that
     # T = int J dx is exactly grad(phi) for a single scalar potential.
