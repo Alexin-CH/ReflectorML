@@ -38,7 +38,7 @@ This repository contains three parallel implementations of the same reflector pr
 | `src_icnn/` | Input Convex Neural Network potential | `MirrorSurface` (ICNN) | Scalar potential `phi(x)` | Hessian of `phi` |
 | `src_gf/` | Gradient-field | `MirrorSurface` (SIREN) | SPD Jacobian `J(x) = D^2 phi` | Jacobian of the map + curl-free penalty |
 
-Run each implementation from the repository root (templates, images, and tests are shared):
+Run each implementation from the repository root (templates and tests are shared):
 
 ```bash
 make
@@ -83,21 +83,13 @@ python tests/test_activation.py     # activation function check (gradient-field)
 
 - - -
 
-## Results ([See more](images/))
+## Results
 
-### Square
-![square](images/target_square.gif)
+Each implementation documents its results in its own README:
 
-### Spiral
-![spiral](images/target_spiral.gif)
-
-### Pi
-![pi](images/target_pi.gif)
-
-### Cards
-![cards](images/target_cards.gif)
-
-[See more results](images/)
+- [src/](src/README.md) — SIREN scalar potential
+- [src_icnn/](src_icnn/README.md) — ICNN scalar potential
+- [src_gf/](src_gf/README.md) — gradient-field (SPD Jacobian)
 
 - - -
 
