@@ -32,11 +32,11 @@ This project implements a hybrid method that aims to use both:
 
 This repository contains three parallel implementations of the same reflector problem:
 
-| Directory | Approach | Network output | Monge-Ampère loss |
-|---|---|---|---|
-| `src/` | Potential-based (`MirrorSurface` / `MirrorSurfaceFV`) | Scalar potential `phi(x)` | Hessian of `phi` |
-| `src_icnn/` | Input Convex Neural Network potential | Scalar potential `phi(x)` | Hessian of `phi` |
-| `src_gf/` | Gradient-field | Vector field `nabla phi(x)` | Jacobian of `nabla phi` |
+| Directory | Approach | Network | Network output | Monge-Ampère loss |
+|---|---|---|---|---|
+| `src/` | SIREN scalar potential | `MirrorSurface` (SIREN) | Scalar potential `phi(x)` | Hessian of `phi` |
+| `src_icnn/` | Input Convex Neural Network potential | `MirrorSurface` (ICNN) | Scalar potential `phi(x)` | Hessian of `phi` |
+| `src_gf/` | Gradient-field | `MirrorSurface` (SIREN) | SPD Jacobian `J(x) = D^2 phi` | Jacobian of the map + curl-free penalty |
 
 Run each implementation from the repository root (templates, images, and tests are shared):
 
