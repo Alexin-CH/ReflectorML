@@ -26,7 +26,7 @@ if __name__ == "__main__":
             epochs=200,
             lr=1e-4,
 
-            adam_fraction=10,
+            adam_fraction=0.95,
             lbfgs_lr=1,
             lbfgs_history_size=10,
             lbfgs_max_iter=30,

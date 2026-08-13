@@ -1,4 +1,38 @@
 import torch
+import torch.nn.functional as F
+
+
+def gaussian_blur(density, sigma, kernel_size=None):
+    """Gaussian-blur a density map (same shape, renormalized to sum 1).
+
+    sigma in pixels; sigma <= 0 returns the density unchanged. Used to smooth
+    piecewise-constant source/target densities so f/g is smooth and the
+    Monge-Ampere data is well-conditioned (see anneal_blur in train.py).
+    """
+    if sigma <= 0:
+        return density
+
+    if kernel_size is None:
+        kernel_size = int(6 * sigma) + 1
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+
+    r = kernel_size // 2
+    t = torch.linspace(-r, r, kernel_size, device=density.device, dtype=density.dtype)
+    g1 = torch.exp(-(t ** 2) / (2 * sigma ** 2))
+    g1 = g1 / g1.sum()
+    kernel = torch.outer(g1, g1).view(1, 1, kernel_size, kernel_size)
+
+    blurred = F.conv2d(
+        density[None, None],
+        kernel,
+        padding=r
+    ).view(density.shape)
+
+    if blurred.sum() > 0:
+        blurred = blurred / blurred.sum()
+    return blurred
+
 
 def reflect_frame(coords):
     """Express 2D coords in the reflected (orientation-preserving) target frame.
@@ -11,6 +45,30 @@ def reflect_frame(coords):
     """
     return torch.cat([-coords[:, 0:1], coords[:, 1:2]], dim=1)
 
+def density_to_normalization_params(density_map):
+    """Pixel-space centering and scaling matching density_to_coords.
+
+    density_to_coords centers the sampled pixels and rescales so the larger
+    axis spans [-max_size, max_size]. This returns the deterministic version of
+    that map, derived from the support bounding box:
+    (row_center, col_center, max_coord) in pixel units.
+    """
+    support = density_map > 0
+    rows = torch.nonzero(support.any(dim=1), as_tuple=False).squeeze(1)
+    cols = torch.nonzero(support.any(dim=0), as_tuple=False).squeeze(1)
+
+    if rows.numel() == 0 or cols.numel() == 0:
+        z = torch.tensor(0.0, device=density_map.device)
+        o = torch.tensor(1.0, device=density_map.device)
+        return z, z, o
+
+    row_center = (rows[0] + rows[-1]) / 2
+    col_center = (cols[0] + cols[-1]) / 2
+    half_row = (rows[-1] - rows[0]) / 2
+    half_col = (cols[-1] - cols[0]) / 2
+    max_coord = torch.maximum(half_row, half_col)
+    return row_center, col_center, max_coord
+
 def coords_to_edges(coords, n_ubins=200, n_vbins=200):
     u_coords = coords[:, 1].clone()
     v_coords = coords[:, 0].clone()
@@ -22,6 +80,22 @@ def coords_to_edges(coords, n_ubins=200, n_vbins=200):
     u_edges = torch.linspace(u_min, u_max, n_ubins).to(coords.device)
     v_edges = torch.linspace(v_min, v_max, n_vbins).to(coords.device)
     return u_edges, v_edges
+
+def pixels_to_coords(x_pix, y_pix, max_size=1):
+    """Map pixel coordinates to the normalized plane used by density_to_coords.
+
+    x_pix, y_pix: float tensors of pixel positions (any jitter included).
+    Returns column_stack((y, -x)) so the convention matches density_to_coords.
+    """
+    x = x_pix - (x_pix.max() + x_pix.min()) / 2
+    y = y_pix - (y_pix.max() + y_pix.min()) / 2
+
+    max_coord = torch.max(x.max(), y.max())
+    if max_coord > 0:
+        x = x * max_size / max_coord
+        y = y * max_size / max_coord
+
+    return torch.column_stack((y, -x))
 
 def coords_to_density_indices(coords, n_ubins=200, n_vbins=200, coord_range=None):
     u_coords = coords[:, 1].clone()
@@ -54,22 +128,6 @@ def coords_to_density(coords, n_ubins=200, n_vbins=200, flip=True, coord_range=N
     else:
         return H
         
-def pixels_to_coords(x_pix, y_pix, max_size=1):
-    """Map pixel coordinates to the normalized plane used by density_to_coords.
-
-    x_pix, y_pix: float tensors of pixel positions (any jitter included).
-    Returns column_stack((y, -x)) so the convention matches density_to_coords.
-    """
-    x = x_pix - (x_pix.max() + x_pix.min()) / 2
-    y = y_pix - (y_pix.max() + y_pix.min()) / 2
-
-    max_coord = torch.max(x.max(), y.max())
-    if max_coord > 0:
-        x = x * max_size / max_coord
-        y = y * max_size / max_coord
-
-    return torch.column_stack((y, -x))
-
 def density_to_coords(density_map, max_size=1, num_points=1000, p=1):
     # Normalize density
     density_normalized = density_map / density_map.sum()
@@ -129,30 +187,6 @@ def density_contour_coords(density_map, max_size=1, num_points=None):
     x_pix = indices[:, 0].float() + 0.5
     y_pix = indices[:, 1].float() + 0.5
     return pixels_to_coords(x_pix, y_pix, max_size)
-
-def density_to_normalization_params(density_map):
-    """Pixel-space centering and scaling matching density_to_coords.
-
-    density_to_coords centers the sampled pixels and rescales so the larger
-    axis spans [-max_size, max_size]. This returns the deterministic version of
-    that map, derived from the support bounding box:
-    (row_center, col_center, max_coord) in pixel units.
-    """
-    support = density_map > 0
-    rows = torch.nonzero(support.any(dim=1), as_tuple=False).squeeze(1)
-    cols = torch.nonzero(support.any(dim=0), as_tuple=False).squeeze(1)
-
-    if rows.numel() == 0 or cols.numel() == 0:
-        z = torch.tensor(0.0, device=density_map.device)
-        o = torch.tensor(1.0, device=density_map.device)
-        return z, z, o
-
-    row_center = (rows[0] + rows[-1]) / 2
-    col_center = (cols[0] + cols[-1]) / 2
-    half_row = (rows[-1] - rows[0]) / 2
-    half_col = (cols[-1] - cols[0]) / 2
-    max_coord = torch.maximum(half_row, half_col)
-    return row_center, col_center, max_coord
 
 def gray_image_to_density(gray_image, normalize=True):
     if gray_image.max() > 1:
