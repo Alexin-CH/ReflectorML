@@ -14,6 +14,10 @@ class Softplus2(nn.Module):
     def forward(self, x):
         return F.softplus(x) ** 2
 
+class ReSU(nn.Module):
+    def forward(self, x):
+        z = x + torch.sin(2*x + torch.pi) / 2
+        return F.relu(z)
 
 class MirrorSurface(nn.Module):
     def __init__(self):
@@ -24,7 +28,7 @@ class MirrorSurface(nn.Module):
                 input_dim=2,
                 hidden_dim=512,
                 depth=4,
-                activation=nn.ReLU(),
+                activation=ReSU(),
                 residual_scale=1
             ),
             nn.Linear(1, 1)
